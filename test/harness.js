@@ -30,7 +30,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "buildZipBlob:buildZipBlob,makeRenamedFile:makeRenamedFile," +
   "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext," +
   "decodeTextFrame:decodeTextFrame,readMp3Tags:readMp3Tags,translit:translit,durOk:durOk," +
-  "untranslit:untranslit,tokenNear:tokenNear," +
+  "readFlacTags:readFlacTags,untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText};\n})();");
 
@@ -164,6 +164,31 @@ eq(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 10
     utf16[le.length + i * 2 + 1] = code >> 8;
   });
   eq(api.decodeTextFrame(utf16), "Тест", "текстовый кадр UTF-16LE с BOM");
+
+  /* ---------- FLAC ---------- */
+  const encU = (s) => new TextEncoder().encode(s);
+  const be32 = (n) => new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
+  const le32 = (n) => new Uint8Array([n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]);
+  const concat = (...arrs) => {
+    const len = arrs.reduce((s, a) => s + a.length, 0);
+    const out = new Uint8Array(len);
+    let o = 0;
+    for (const a of arrs) { out.set(a, o); o += a.length; }
+    return out;
+  };
+  const si = new Uint8Array(34);
+  const sr = 44100, total = 8820000;
+  si[10] = (sr >> 12) & 255; si[11] = (sr >> 4) & 255; si[12] = (sr & 15) << 4;
+  const tb = be32(total);
+  si[14] = tb[0]; si[15] = tb[1]; si[16] = tb[2]; si[17] = tb[3];
+  const f1 = encU("TITLE=Песня"), f2 = encU("ARTIST=Артист");
+  const vc = concat(new Uint8Array(4), le32(2), le32(f1.length), f1, le32(f2.length), f2);
+  const blk = (type, last, body) => concat(new Uint8Array([(last ? 0x80 : 0) | type, (body.length >> 16) & 255, (body.length >> 8) & 255, body.length & 255]), body);
+  const flacBuf = concat(encU("fLaC"), blk(0, false, si), blk(4, true, vc));
+  const ftags = await api.readFlacTags(new File([flacBuf], "x.flac"));
+  eq(ftags && ftags.title, "Песня", "FLAC: TITLE");
+  eq(ftags && ftags.artist, "Артист", "FLAC: ARTIST");
+  eq(ftags && ftags.length, 200000, "FLAC: длительность из STREAMINFO");
 
   const payloads = [
     { name: "001 - Артист - Песня.mp3", data: new Uint8Array([1, 2, 3, 4, 5]) },
