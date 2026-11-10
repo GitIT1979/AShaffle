@@ -61,6 +61,7 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .ed.t{flex:1}
 .vt{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
 .vsum{font-size:12px;color:var(--m)}
+.req{font-size:12px;color:var(--m);margin:0 0 12px;line-height:1.5}
 .fl{max-height:340px}
 .pw{display:none;margin-top:12px}
 .pw.show{display:block}
@@ -92,9 +93,9 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v8.8</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v8.9</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
-<p class="hint">Загрузите файлы или папку, нажмите <b>🔎 Проверить названия</b> — программа найдёт правильные исполнителя и трек, — затем <b>🎲 Ashuffle this!</b> и скачайте результат в свою папку.</p>
+<p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
 <div class="dz" id="dz"><span class="big">🎵</span><b>Перетащите файлы или папку сюда</b><div class="sm">или нажмите, чтобы выбрать</div></div>
 <input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff" style="display:none">
@@ -118,10 +119,7 @@ h3{margin:0 0 10px;font-size:15px}
   <input type="checkbox" id="numbered" checked>
   <label for="numbered">Смешивать файлы в случайном порядке и нумеровать</label>
 </div>
-<div class="opt">
-  <input type="checkbox" id="onlineUse" checked>
-  <label for="onlineUse">Проверять названия в интернете перед перемешиванием</label>
-</div>
+<div class="req">Перед перемешиванием каждое название проверяется в интернете — без этого шага файлы не переименовываются.</div>
 
 <button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
 
@@ -330,7 +328,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/8.8 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/8.9 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -614,7 +612,10 @@ function updateGoBtn(){
   } else {
     vf.disabled=!has; vf.textContent="🔎 Проверить названия";
     if(has && (dirty || results.length===0)){
-      go.style.display="block"; go.disabled=false; go.textContent="🎲 Ashuffle this!";
+      var rawLeft=0;
+      files.forEach(function(f){ if(f.info.status==="raw") rawLeft++; });
+      go.style.display="block"; go.disabled=false;
+      go.textContent = rawLeft ? "🎲 Проверить и перемешать" : "🎲 Ashuffle this!";
     } else {
       go.style.display="none";
     }
@@ -622,7 +623,8 @@ function updateGoBtn(){
   var sum=$("vsum"); if(sum) sum.textContent=summaryText();
 }
 
-function needsCheck(f){ return f.info.status==="raw" || f.info.status==="none"; }
+function needsCheck(f){ return f.info.status==="raw"; }
+function needsRetry(f){ return f.info.status==="raw" || f.info.status==="none"; }
 function summaryText(){
   if(!files.length) return "";
   var c={raw:0,ok:0,fixed:0,none:0,manual:0};
@@ -738,7 +740,7 @@ function lookupTrack(info){
 function verifyQueue(todo){
   pshow("Проверка названий через интернет…");
   var st={changed:0, confirmed:0, missing:0, cancelled:false, stopped:false};
-  var i=0, netStreak=0;
+  var i=0, netStreak=0, failedNow=[];
   function step(){
     if(cancelVerify){ st.cancelled=true; return Promise.resolve(st); }
     if(i>=todo.length) return Promise.resolve(st);
@@ -754,22 +756,31 @@ function verifyQueue(todo){
       } else {
         f.info.status="none";
         st.missing++;
+        failedNow.push(f);
       }
       i++;
       refreshRow(f);
       if(i%5===0) updateGoBtn();
       pup(i, todo.length, "Проверка: "+i+" / "+todo.length+" — "+f.name.slice(0,46));
       netStreak = (!found && _netErrors>netAt) ? netStreak+1 : 0;
-      if(netStreak>=3 && i<todo.length){ st.stopped=true; return st; }
+      if(netStreak>=3){ st.stopped=true; return st; }
       return step();
     });
   }
-  return step().then(function(r){ phide(); return r; });
+  return step().then(function(r){
+    phide();
+    /* сеть легла — это не «не найдено», файлы остаются непроверенными */
+    if(r.stopped){
+      failedNow.forEach(function(f){ f.info.status="raw"; f.info.source=""; });
+      r.missing=0;
+    }
+    return r;
+  });
 }
 
 function verifyAll(){
   if(!files.length || busy || verifying) return Promise.resolve();
-  var todo=files.filter(needsCheck);
+  var todo=files.filter(needsRetry);
   if(!todo.length){ stt("Все названия уже проверены. Правьте вручную через ✎."); return Promise.resolve(); }
   verifying=true; cancelVerify=false; dirty=true;
   resetResults(); updateGoBtn();
@@ -786,9 +797,8 @@ function runAshuffle(){
   if(!files.length || busy || verifying) return;
   busy=true; updateGoBtn(); phide();
   resetResults();
-  var useOnline=$("onlineUse").checked;
   var useNumbered=$("numbered").checked;
-  var todo = useOnline ? files.filter(needsCheck) : [];
+  var todo = files.filter(needsCheck);
   var prep;
   if(todo.length){
     verifying=true; cancelVerify=false; updateGoBtn();
@@ -811,6 +821,12 @@ function runAshuffle(){
 }
 
 function startShuffle(useNumbered){
+  var raw=files.filter(function(f){ return f.info.status==="raw"; });
+  if(raw.length){
+    busy=false; updateGoBtn();
+    stt("Сначала нужно проверить названия: осталось "+raw.length+" файлов.");
+    return;
+  }
   var groups={};
   files.forEach(function(f){
     var key=norm(f.info.artist || "unknown_artist");
