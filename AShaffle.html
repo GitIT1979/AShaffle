@@ -698,10 +698,10 @@ function usefulTag(v){
 }
 /* Тег важнее имени файла; длительность нужна для отсева чужих совпадений. */
 function inspectEntry(e){
-  var jobs = [probeDuration(e.file), ext(e.name) === "mp3" ? readMp3Tags(e.file) : Promise.resolve(null)];
-  return Promise.all(jobs).then(function(res){
-    var dur = res[0], tags = res[1];
+  return probeDuration(e.file).then(function(dur){
     if(dur > 0) e.duration = dur;
+    return ext(e.name) === "mp3" ? readMp3Tags(e.file) : null;
+  }).then(function(tags){
     if(tags){
       e.tags = tags;
       if(!e.duration && tags.length) e.duration = tags.length / 1000;
