@@ -155,6 +155,8 @@ eq(api.cleanJunk("Song (Live)"), "Song (Live)", "live оставляем");
 eq(api.dropVariants("Song (Live)"), "Song", "для поиска live убираем");
 eq(api.tokenNear("направл", "направление"), true, "усечённое слово совпадает");
 eq(api.tokenNear("мишел", "мишель"), true, "усечённый исполнитель совпадает");
+eq(api.isGoodMatchFlex("Марат Мэлхарт", "ЧУДОBRO", ""), false, "чужой исполнитель не проходит проверку");
+eq(api.isGoodMatchFlex("Моя Мишел", "Моя Мишель", ""), true, "усечённый исполнитель проходит");
 
 /* ---------- ZIP ---------- */
 (async function () {
