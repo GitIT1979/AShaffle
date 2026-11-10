@@ -54,6 +54,9 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .bd.fx{color:#1d4ed8;background:var(--bll);border-color:transparent}
 .bd.nn{color:#b45309;background:#fef3c7;border-color:#fde68a}
 .bd.mn{color:#6d28d9;background:#ede9fe;border-color:transparent}
+.bd.tg{color:#0369a1;background:#e0f2fe;border-color:transparent}
+.dur{font-size:11px;color:var(--m);font-family:Consolas,monospace;margin-left:auto}
+[data-theme=dark] .bd.tg{color:#7dd3fc;background:#0c2a3a;border-color:transparent}
 [data-theme=dark] .bd.nn{color:#fbbf24;background:#3a2e1a;border-color:#5a4620}
 [data-theme=dark] .bd.mn{color:#c4b5fd;background:#2e2450;border-color:transparent}
 .ed{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--b);border-radius:6px;background:var(--c);color:var(--t);min-width:0}
@@ -93,7 +96,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v8.9</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.0</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -167,6 +170,7 @@ function norm(s){
 }
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function fmtSize(b){if(b<1024)return b+" Б";if(b<1048576)return (b/1024).toFixed(1)+" КБ";return (b/1048576).toFixed(1)+" МБ"}
+function fmtDur(s){var t=Math.round(s||0),m=Math.floor(t/60),r=t%60;return m+":"+(r<10?"0":"")+r}
 function theme(t){
   if(t==="dark"){document.documentElement.setAttribute("data-theme","dark");$("tt").textContent="☀️"}
   else{document.documentElement.removeAttribute("data-theme");$("tt").textContent="🌙"}
@@ -311,6 +315,31 @@ function isGoodMatch(query, mbArtist, mbTitle){
   return true;
 }
 
+/* Допуск по длительности: ремастер или тишина в начале могут добавить пару секунд */
+var DUR_TOL = 6;
+function durOk(fileDur, candMs){
+  if(!fileDur || !candMs) return true;
+  return Math.abs(candMs/1000 - fileDur) <= DUR_TOL;
+}
+/* Кириллица → латиница: без этого половина русских треков не ищется в MB */
+var _TR = {а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"y",
+           к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",
+           х:"kh",ц:"ts",ч:"ch",ш:"sh",щ:"shch",ъ:"",ы:"y",ь:"",э:"e",ю:"yu",я:"ya"};
+function translit(s){
+  return String(s||"").toLowerCase().split("").map(function(ch){
+    return Object.prototype.hasOwnProperty.call(_TR, ch) ? _TR[ch] : ch;
+  }).join("").replace(/\s+/g," ").trim();
+}
+function isGoodMatchFlex(query, artist, title){
+  if(isGoodMatch(query, artist, title)) return true;
+  var tq = translit(query);
+  if(tq && tq !== String(query).toLowerCase() && isGoodMatch(tq, artist, title)) return true;
+  var combo = (artist||"") + " " + (title||"");
+  var tr = translit(combo);
+  if(tr && tr !== combo.toLowerCase() && isGoodMatch(query, tr, "")) return true;
+  return false;
+}
+
 /* ============================================================
    3. MusicBrainz + iTunes (таймауты, retry 503/429)
    ============================================================ */
@@ -328,7 +357,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/8.9 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.0 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -367,7 +396,7 @@ function lookupMusicBrainzByArtistTitle(artist, title){
   if(title)  parts.push('recording:"' + title.replace(/"/g,"") + '"');
   return _mbRequest(parts.join(" AND "));
 }
-function pickMusicBrainzResult(recordings, query){
+function pickMusicBrainzResult(recordings, query, dur){
   if(!recordings || !recordings.length) return null;
   for(var i=0;i<recordings.length;i++){
     var rec = recordings[i];
@@ -375,7 +404,8 @@ function pickMusicBrainzResult(recordings, query){
     var mbArtist = rec["artist-credit"][0].name;
     var mbTitle  = rec.title;
     if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
-    if(!isGoodMatch(query, mbArtist, mbTitle)) continue;
+    if(!durOk(dur, rec.length)) continue;
+    if(!isGoodMatchFlex(query, mbArtist, mbTitle)) continue;
     return { artist: mbArtist, title: cleanMBTitle(mbTitle), source: "MusicBrainz" };
   }
   return null;
@@ -394,9 +424,10 @@ function cleanMBTitle(t){
   }).replace(/\s+/g, " ").trim();
 }
 var _itCache = {}, _lastITRequest = 0;
-function lookupITunes(term){
+function lookupITunes(term, dur){
   if(!CAN_ITUNES) return Promise.resolve(null);
-  var key = "it|" + term.toLowerCase();
+  if(!term) return Promise.resolve(null);
+  var key = "it|" + Math.round(dur||0) + "|" + term.toLowerCase();
   if(Object.prototype.hasOwnProperty.call(_itCache, key)) return Promise.resolve(_itCache[key]);
   var now = Date.now(), wait = Math.max(0, 3200 - (now - _lastITRequest));
   return new Promise(function(resolve){
@@ -412,7 +443,8 @@ function lookupITunes(term){
               var res = data.results[i];
               if(!res.trackName || !res.artistName) continue;
               if(!/[a-zA-Zа-яА-ЯёЁ]/.test(res.trackName)) continue;
-              if(!isGoodMatch(term, res.artistName, res.trackName)) continue;
+              if(!durOk(dur, res.trackTimeMillis)) continue;
+              if(!isGoodMatchFlex(term, res.artistName, res.trackName)) continue;
               out = { artist: res.artistName, title: cleanMBTitle(res.trackName), source: "iTunes" };
               break;
             }
@@ -593,6 +625,98 @@ function makeRenamedFile(originalFile, finalName, num, artist, title){
 }
 
 /* ============================================================
+   6b. ТЕГИ И ДЛИТЕЛЬНОСТЬ
+   ============================================================ */
+function decodeTextFrame(body){
+  if(!body || !body.length) return "";
+  var enc = body[0], bytes = body.subarray(1), text = "";
+  try{
+    if(enc === 0)      text = new TextDecoder("iso-8859-1").decode(bytes);
+    else if(enc === 3) text = new TextDecoder("utf-8").decode(bytes);
+    else if(enc === 2) text = new TextDecoder("utf-16be").decode(bytes);
+    else {
+      var le = bytes[0] === 0xFF && bytes[1] === 0xFE;
+      var be = bytes[0] === 0xFE && bytes[1] === 0xFF;
+      text = new TextDecoder(be ? "utf-16be" : "utf-16le").decode(bytes.subarray((le || be) ? 2 : 0));
+    }
+  }catch(e){ return ""; }
+  return text.split("\u0000")[0].replace(/\u0000+/g, "").trim();
+}
+function readMp3Tags(file){
+  return file.slice(0, 768*1024).arrayBuffer().then(function(buf){
+    var tag = readId3Tag(new Uint8Array(buf));
+    if(!tag || !tag.frames || !tag.frames.length) return null;
+    var out = {};
+    tag.frames.forEach(function(f){
+      var v;
+      if(f.id === "TIT2" && !out.title){ v = decodeTextFrame(f.body); if(v) out.title = v; }
+      else if(f.id === "TPE1" && !out.artist){ v = decodeTextFrame(f.body); if(v) out.artist = v; }
+      else if(f.id === "TALB" && !out.album){ v = decodeTextFrame(f.body); if(v) out.album = v; }
+      else if(f.id === "TLEN" && !out.length){ v = parseInt(decodeTextFrame(f.body), 10); if(v > 0) out.length = v; }
+    });
+    return out;
+  }).catch(function(){ return null; });
+}
+var _probeQueue = [], _probeActive = 0;
+function probeDuration(file){
+  if(typeof Audio !== "function") return Promise.resolve(0);
+  return new Promise(function(resolve){
+    _probeQueue.push({ file: file, resolve: resolve });
+    pumpProbes();
+  });
+}
+/* Не больше 4 одновременных чтений метаданных: иначе большая папка вешает браузер */
+function pumpProbes(){
+  while(_probeActive < 4 && _probeQueue.length){
+    (function(job){
+      _probeActive++;
+      var url = URL.createObjectURL(job.file), a = new Audio(), done = false;
+      function finish(v){
+        if(done) return;
+        done = true;
+        try{ a.removeAttribute("src"); }catch(e){}
+        try{ URL.revokeObjectURL(url); }catch(e2){}
+        _probeActive--;
+        job.resolve(v || 0);
+        pumpProbes();
+      }
+      a.preload = "metadata";
+      a.onloadedmetadata = function(){ finish(isFinite(a.duration) ? a.duration : 0); };
+      a.onerror = function(){ finish(0); };
+      setTimeout(function(){ finish(0); }, 8000);
+      a.src = url;
+    })(_probeQueue.shift());
+  }
+}
+function usefulTag(v){
+  if(!v) return false;
+  var s = String(v).trim();
+  if(s.length < 2 || s.length > 150) return false;
+  if(!/[a-zA-Zа-яА-ЯёЁ]/.test(s)) return false;
+  if(/^(track|audio|unknown|untitled|no title)\b/i.test(s)) return false;
+  return true;
+}
+/* Тег важнее имени файла; длительность нужна для отсева чужих совпадений. */
+function inspectEntry(e){
+  var jobs = [probeDuration(e.file), ext(e.name) === "mp3" ? readMp3Tags(e.file) : Promise.resolve(null)];
+  return Promise.all(jobs).then(function(res){
+    var dur = res[0], tags = res[1];
+    if(dur > 0) e.duration = dur;
+    if(tags){
+      e.tags = tags;
+      if(!e.duration && tags.length) e.duration = tags.length / 1000;
+      if(e.info.status === "raw" && e.id !== editingId){
+        var changed = false;
+        if(usefulTag(tags.artist) && norm(tags.artist) !== norm(e.info.artist)){ e.info.artist = tags.artist.trim(); changed = true; }
+        if(usefulTag(tags.title)  && norm(tags.title)  !== norm(e.info.title)){  e.info.title  = tags.title.trim();  changed = true; }
+        if(changed){ e.info.fromTags = true; e.info._raw = ""; }
+      }
+    }
+    refreshRow(e);
+  }).catch(function(){});
+}
+
+/* ============================================================
    7. UI
    ============================================================ */
 function stt(m){$("st").textContent=m}
@@ -673,7 +797,10 @@ function rowHtml(f,i){
         '<button class="ic" data-act="edit" data-id="'+f.id+'" type="button" title="Исправить исполнителя и название">✎</button>'+
         '<button class="ic rm" data-act="rm" data-id="'+f.id+'" type="button" title="Убрать из списка">✕</button>'+
       '</div>'+
-      '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+'</div>'+
+      '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
+        (info.fromTags && info.status==="raw" ? '<span class="bd tg" title="Исполнитель и название взяты из тега файла">тег</span>' : '')+
+        (f.duration ? '<span class="dur">'+fmtDur(f.duration)+'</span>' : '')+
+      '</div>'+
     '</div></div>';
 }
 
@@ -685,7 +812,8 @@ function draw(){
 }
 function refreshRow(f){
   var i=files.indexOf(f); if(i<0) return;
-  var el=$("list").querySelector('[data-id="'+f.id+'"]'); if(!el) return;
+  var L=$("list"); if(!L || !L.querySelector) return;
+  var el=L.querySelector('[data-id="'+f.id+'"]'); if(!el) return;
   var tmp=document.createElement("div");
   tmp.innerHTML=rowHtml(f,i).trim();
   if(tmp.firstChild) el.parentNode.replaceChild(tmp.firstChild, el);
@@ -718,22 +846,33 @@ function drawResults(){
 /* ============================================================
    8. ПРОВЕРКА НАЗВАНИЙ И ASHUFFLE
    ============================================================ */
-function lookupTrack(info){
+function lookupTrack(info, dur){
   var a=info.artist, t=info.title, raw=info._raw||"";
-  var term=(raw || ((a?a+" ":"")+t)).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
+  var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";
+  var term=(primary || raw).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
   if(!term) return Promise.resolve(null);
-  return lookupMusicBrainzByRecording(term).then(function(recs){
-    var found=pickMusicBrainzResult(recs, term);
-    if(found) return found;
-    if(a && t && t!=="unknown_track"){
-      return lookupMusicBrainzByArtistTitle(a, t).then(function(recs2){
-        var found2=pickMusicBrainzResult(recs2, a+" "+t);
-        if(found2) return found2;
-        return lookupITunes(term);
-      });
-    }
-    return lookupITunes(term);
-  }).catch(function(){ return null; });
+
+  var steps=[];
+  /* Сначала точный запрос «исполнитель + название» — он даёт меньше мусора */
+  if(primary) steps.push(function(){
+    return lookupMusicBrainzByArtistTitle(a, t).then(function(r){ return pickMusicBrainzResult(r, primary, dur); });
+  });
+  if(term) steps.push(function(){
+    return lookupMusicBrainzByRecording(term).then(function(r){ return pickMusicBrainzResult(r, term, dur); });
+  });
+  /* Второй проход латиницей: «Дельфин» → «Delfin» */
+  var trq=translit(primary || term);
+  if(trq && trq !== (primary || term).toLowerCase()) steps.push(function(){
+    return lookupMusicBrainzByRecording(trq).then(function(r){ return pickMusicBrainzResult(r, trq, dur); });
+  });
+  steps.push(function(){ return lookupITunes(primary || term, dur); });
+
+  var i=0;
+  function next(){
+    if(i>=steps.length) return Promise.resolve(null);
+    return Promise.resolve(steps[i++]()).then(function(found){ return found ? found : next(); });
+  }
+  return next().catch(function(){ return null; });
 }
 
 /* Проходит по списку по одному файлу и отмечает статус каждого названия. */
@@ -745,7 +884,7 @@ function verifyQueue(todo){
     if(cancelVerify){ st.cancelled=true; return Promise.resolve(st); }
     if(i>=todo.length) return Promise.resolve(st);
     var f=todo[i], netAt=_netErrors;
-    return lookupTrack(f.info).then(function(found){
+    return lookupTrack(f.info, f.duration).then(function(found){
       if(found){
         var same = norm(found.artist)===norm(f.info.artist) && norm(found.title)===norm(f.info.title);
         f.info.artist = found.artist || f.info.artist;
@@ -911,14 +1050,17 @@ function add(input, pathMap){
     if(ex[k]){ dups++; continue; }
     ex[k]=1;
     var parsed=parseTrackInfo(f.name);
-    files.push({
+    var entry={
       id: nextId++,
       name: f.name,
       file: f,
       path: p,
+      duration: 0,
       parsed: parsed,
       info: { artist: parsed.artist, title: parsed.title, _raw: parsed._raw, status: "raw", source: "" }
-    });
+    };
+    files.push(entry);
+    inspectEntry(entry);
     added++;
   }
   var skipped=[];

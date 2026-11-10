@@ -29,6 +29,8 @@ code = code.replace(/\}\)\(\);\s*$/,
   "stripTrackPrefix:stripTrackPrefix,safeNamePart:safeNamePart,trySplit:trySplit," +
   "buildZipBlob:buildZipBlob,makeRenamedFile:makeRenamedFile," +
   "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext," +
+  "decodeTextFrame:decodeTextFrame,readMp3Tags:readMp3Tags,translit:translit,durOk:durOk," +
+  "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText};\n})();");
 
 function makeEl() {
@@ -37,6 +39,7 @@ function makeEl() {
     style: {}, dataset: {}, files: [],
     classList: { add() {}, remove() {}, contains() { return false; } },
     addEventListener() {}, appendChild() {}, removeChild() {}, click() {},
+    querySelector() { return null; },
     querySelectorAll() { return []; },
     setAttribute() {}, removeAttribute() {}, getAttribute() { return null; },
   };
@@ -112,8 +115,48 @@ api.add([mkFile("readme.txt")], ["x/readme.txt"]);
 eq(api.entries().length, 2, "add: не аудио отклонено");
 eq(api.needsCheck(api.entries()[0]), true, "needsCheck для raw");
 
+/* ---------- транслитерация и длительность ---------- */
+eq(api.translit("Дельфин"), "delfin", "транслит: Дельфин");
+eq(api.translit("На часах ноль-ноль"), "na chasakh nol-nol", "транслит: кириллица → латиница");
+eq(api.durOk(200, 200000), true, "длительность совпала");
+eq(api.durOk(200, 230000), false, "длительность расходится на 30 с");
+eq(api.durOk(0, 230000), true, "длительность неизвестна — не отсекаем");
+eq(api.isGoodMatchFlex("Delfin Lyubov", "Дельфин", "Любовь"), true, "матч через транслит результата");
+
+const recs = [{ "artist-credit": [{ name: "Dabro" }], title: "На часах ноль-ноль", length: 206386 }];
+ok(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 206), "MB: совпадение с верной длительностью");
+eq(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 100), null, "MB: отсев по длительности");
+
 /* ---------- ZIP ---------- */
 (async function () {
+  /* ---------- чтение тегов ---------- */
+  const tagBytes = api.buildId3v24Tag([
+    { id: "TIT2", value: "Песня" },
+    { id: "TPE1", value: "Артист" },
+    { id: "TLEN", value: "215000" },
+  ]);
+  const mp3 = new Uint8Array(tagBytes.length + 8);
+  mp3.set(tagBytes, 0);
+  const tags = await api.readMp3Tags(new File([mp3], "x.mp3"));
+  eq(tags && tags.title, "Песня", "тег TIT2 прочитан");
+  eq(tags && tags.artist, "Артист", "тег TPE1 прочитан");
+  eq(tags && tags.length, 215000, "тег TLEN прочитан");
+
+  const utf8 = new TextEncoder().encode("Привет");
+  const body8 = new Uint8Array(1 + utf8.length);
+  body8[0] = 3; body8.set(utf8, 1);
+  eq(api.decodeTextFrame(body8), "Привет", "текстовый кадр UTF-8");
+
+  const le = new Uint8Array([0x01, 0xFF, 0xFE]);
+  const utf16 = new Uint8Array(le.length + 2 * 4);
+  utf16.set(le, 0);
+  "Тест".split("").forEach((ch, i) => {
+    const code = ch.charCodeAt(0);
+    utf16[le.length + i * 2] = code & 0xff;
+    utf16[le.length + i * 2 + 1] = code >> 8;
+  });
+  eq(api.decodeTextFrame(utf16), "Тест", "текстовый кадр UTF-16LE с BOM");
+
   const payloads = [
     { name: "001 - Артист - Песня.mp3", data: new Uint8Array([1, 2, 3, 4, 5]) },
     { name: "empty.bin", data: new Uint8Array(0) },
