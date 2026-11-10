@@ -96,7 +96,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.2</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.3</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -408,7 +408,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.2 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.3 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -756,6 +756,93 @@ function readFlacTags(file){
   }).catch(function(){ return null; });
 }
 var _probeQueue = [], _probeActive = 0;
+/* MP4/M4A: moov → udta → meta → ilst, тексты в атомах ©nam / ©ART / ©alb */
+function _mp4Atoms(u8, start, end){
+  var list = [], p = start;
+  while(p + 8 <= end){
+    var size = ((u8[p]<<24) | (u8[p+1]<<16) | (u8[p+2]<<8) | u8[p+3]) >>> 0;
+    var type = String.fromCharCode(u8[p+4], u8[p+5], u8[p+6], u8[p+7]);
+    var hdr = 8;
+    if(size === 1 && p + 16 <= end){
+      var hi = ((u8[p+8]<<24)|(u8[p+9]<<16)|(u8[p+10]<<8)|u8[p+11]) >>> 0;
+      var lo = ((u8[p+12]<<24)|(u8[p+13]<<16)|(u8[p+14]<<8)|u8[p+15]) >>> 0;
+      size = hi * 4294967296 + lo;
+      hdr = 16;
+    } else if(size === 0){
+      size = end - p;
+    }
+    if(size < hdr || p + size > end) break;
+    list.push({ type: type, start: p + hdr, end: p + size });
+    p += size;
+  }
+  return list;
+}
+function _mp4Find(atoms, type){
+  for(var i=0;i<atoms.length;i++) if(atoms[i].type === type) return atoms[i];
+  return null;
+}
+function _mp4Text(u8, atom){
+  var data = _mp4Find(_mp4Atoms(u8, atom.start, atom.end), "data");
+  if(!data) return "";
+  return new TextDecoder("utf-8").decode(u8.subarray(data.start + 8, data.end)).replace(/\u0000+$/g, "").trim();
+}
+function readMp4Tags(file){
+  if(file.size > 48 * 1024 * 1024) return Promise.resolve(null);
+  return file.arrayBuffer().then(function(buf){
+    var u8 = new Uint8Array(buf);
+    var moov = _mp4Find(_mp4Atoms(u8, 0, u8.length), "moov");
+    if(!moov) return null;
+    var udta = _mp4Find(_mp4Atoms(u8, moov.start, moov.end), "udta");
+    if(!udta) return null;
+    var meta = _mp4Find(_mp4Atoms(u8, udta.start, udta.end), "meta");
+    if(!meta) return null;
+    var ilst = _mp4Find(_mp4Atoms(u8, meta.start + 4, meta.end), "ilst");
+    if(!ilst) return null;
+    var out = {};
+    _mp4Atoms(u8, ilst.start, ilst.end).forEach(function(k){
+      var v;
+      if(k.type === "\u00A9nam" && !out.title){ v = _mp4Text(u8, k); if(v) out.title = v; }
+      else if(k.type === "\u00A9ART" && !out.artist){ v = _mp4Text(u8, k); if(v) out.artist = v; }
+      else if(k.type === "\u00A9alb" && !out.album){ v = _mp4Text(u8, k); if(v) out.album = v; }
+    });
+    return (out.title || out.artist) ? out : null;
+  }).catch(function(){ return null; });
+}
+/* Ogg Vorbis / Opus: склеиваем данные первых страниц и ищем заголовок комментариев */
+function readOggTags(file){
+  return file.slice(0, 512*1024).arrayBuffer().then(function(buf){
+    var u8 = new Uint8Array(buf);
+    if(u8.length < 28 || String.fromCharCode(u8[0],u8[1],u8[2],u8[3]) !== "OggS") return null;
+    var parts = [], p = 0;
+    while(p + 27 <= u8.length){
+      if(String.fromCharCode(u8[p],u8[p+1],u8[p+2],u8[p+3]) !== "OggS") break;
+      var nseg = u8[p+26], table = p + 27, total = 0;
+      for(var i=0;i<nseg;i++) total += u8[table+i];
+      var dstart = table + nseg;
+      if(dstart + total > u8.length) break;
+      parts.push(u8.subarray(dstart, dstart + total));
+      p = dstart + total;
+    }
+    if(!parts.length) return null;
+    var len = 0;
+    parts.forEach(function(x){ len += x.length; });
+    var data = new Uint8Array(len), o = 0;
+    parts.forEach(function(x){ data.set(x, o); o += x.length; });
+
+    var idx = -1, skip = 0;
+    for(var j=0;j+8<data.length;j++){
+      if(data[j] === 3 && data[j+1] === 0x76 && data[j+2] === 0x6f && data[j+3] === 0x72 &&
+         data[j+4] === 0x62 && data[j+5] === 0x69 && data[j+6] === 0x73){ idx = j; skip = 7; break; }
+      if(data[j] === 0x4f && data[j+1] === 0x70 && data[j+2] === 0x75 && data[j+3] === 0x73 &&
+         data[j+4] === 0x54 && data[j+5] === 0x61 && data[j+6] === 0x67 && data[j+7] === 0x73){ idx = j; skip = 8; break; }
+    }
+    if(idx < 0) return null;
+    var out = {};
+    _vorbisFields(data.subarray(idx + skip), out);
+    return (out.title || out.artist) ? out : null;
+  }).catch(function(){ return null; });
+}
+var _probeQueue = [], _probeActive = 0;
 function probeDuration(file){
   if(typeof Audio !== "function") return Promise.resolve(0);
   return new Promise(function(resolve){
@@ -801,6 +888,8 @@ function inspectEntry(e){
     var extn = ext(e.name);
     if(extn === "mp3") return readMp3Tags(e.file);
     if(extn === "flac") return readFlacTags(e.file);
+    if(extn === "m4a" || extn === "alac") return readMp4Tags(e.file);
+    if(extn === "ogg" || extn === "oga" || extn === "opus") return readOggTags(e.file);
     return null;
   }).then(function(tags){
     if(tags){

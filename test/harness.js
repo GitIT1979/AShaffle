@@ -30,7 +30,8 @@ code = code.replace(/\}\)\(\);\s*$/,
   "buildZipBlob:buildZipBlob,makeRenamedFile:makeRenamedFile," +
   "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext," +
   "decodeTextFrame:decodeTextFrame,readMp3Tags:readMp3Tags,translit:translit,durOk:durOk," +
-  "readFlacTags:readFlacTags,untranslit:untranslit,tokenNear:tokenNear," +
+  "readFlacTags:readFlacTags,readMp4Tags:readMp4Tags,readOggTags:readOggTags," +
+  "untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText};\n})();");
 
@@ -189,6 +190,37 @@ eq(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 10
   eq(ftags && ftags.title, "Песня", "FLAC: TITLE");
   eq(ftags && ftags.artist, "Артист", "FLAC: ARTIST");
   eq(ftags && ftags.length, 200000, "FLAC: длительность из STREAMINFO");
+
+  /* ---------- M4A ---------- */
+  const typ = (s) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
+  const atomB = (typeBytes, payload) => {
+    const size = 8 + payload.length;
+    return concat(new Uint8Array([(size >>> 24) & 255, (size >>> 16) & 255, (size >>> 8) & 255, size & 255]), typeBytes, payload);
+  };
+  const dataAtom = (text) => atomB(typ("data"), concat(new Uint8Array([0, 0, 0, 1, 0, 0, 0, 0]), encU(text)));
+  const ilst = atomB(typ("ilst"), concat(
+    atomB(new Uint8Array([0xA9, 0x6e, 0x61, 0x6d]), dataAtom("Песня")),
+    atomB(new Uint8Array([0xA9, 0x41, 0x52, 0x54]), dataAtom("Артист")),
+  ));
+  const mp4 = concat(
+    atomB(typ("ftyp"), encU("M4A \u0000\u0000\u0002\u0000")),
+    atomB(typ("moov"), atomB(typ("udta"), atomB(typ("meta"), concat(new Uint8Array([0, 0, 0, 0]), ilst)))),
+  );
+  const mtags = await api.readMp4Tags(new File([mp4], "x.m4a"));
+  eq(mtags && mtags.title, "Песня", "M4A: ©nam");
+  eq(mtags && mtags.artist, "Артист", "M4A: ©ART");
+
+  /* ---------- Ogg ---------- */
+  const oggPage = (payload, seq, htype) => concat(
+    encU("OggS"), new Uint8Array([0, htype]), new Uint8Array(8), new Uint8Array(4),
+    le32(seq), new Uint8Array(4), new Uint8Array([1, payload.length]), payload,
+  );
+  const idPacket = concat(new Uint8Array([1]), encU("vorbis"), new Uint8Array(23));
+  const comment = concat(new Uint8Array([3]), encU("vorbis"), new Uint8Array(4), le32(2) , le32(f1.length), f1, le32(f2.length), f2);
+  const ogg = concat(oggPage(idPacket, 0, 2), oggPage(comment, 1, 0));
+  const otags = await api.readOggTags(new File([ogg], "x.ogg"));
+  eq(otags && otags.title, "Песня", "Ogg: TITLE");
+  eq(otags && otags.artist, "Артист", "Ogg: ARTIST");
 
   const payloads = [
     { name: "001 - Артист - Песня.mp3", data: new Uint8Array([1, 2, 3, 4, 5]) },
