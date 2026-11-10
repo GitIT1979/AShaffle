@@ -31,6 +31,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext," +
   "decodeTextFrame:decodeTextFrame,readMp3Tags:readMp3Tags,translit:translit,durOk:durOk," +
   "readFlacTags:readFlacTags,readMp4Tags:readMp4Tags,readOggTags:readOggTags," +
+  "readApeTags:readApeTags,readWmaTags:readWmaTags," +
   "untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText};\n})();");
@@ -221,6 +222,39 @@ eq(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 10
   const otags = await api.readOggTags(new File([ogg], "x.ogg"));
   eq(otags && otags.title, "Песня", "Ogg: TITLE");
   eq(otags && otags.artist, "Артист", "Ogg: ARTIST");
+
+  /* ---------- APEv2 ---------- */
+  const ascii = (s) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
+  const apeItem = (key, value) => concat(le32(value.length), le32(0), ascii(key), new Uint8Array([0]), value);
+  const apeItems = concat(apeItem("Title", encU("Песня")), apeItem("Artist", encU("Артист")));
+  const apeFooter = concat(encU("APETAGEX"), le32(2000), le32(apeItems.length + 32), le32(2), le32(0), new Uint8Array(8));
+  const ape = concat(new Uint8Array(100), apeItems, apeFooter);
+  const atags = await api.readApeTags(new File([ape], "x.ape"));
+  eq(atags && atags.title, "Песня", "APE: Title");
+  eq(atags && atags.artist, "Артист", "APE: Artist");
+
+  /* ---------- WMA/ASF ---------- */
+  const le16 = (n) => new Uint8Array([n & 255, (n >> 8) & 255]);
+  const le64 = (n) => {
+    const a = new Uint8Array(8);
+    let m = n;
+    for (let i = 0; i < 8; i++) { a[i] = m & 255; m = Math.floor(m / 256); }
+    return a;
+  };
+  const u16 = (s) => {
+    const a = new Uint8Array(s.length * 2);
+    for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); a[i * 2] = c & 255; a[i * 2 + 1] = c >> 8; }
+    return a;
+  };
+  const guid = (hex) => new Uint8Array(hex.match(/../g).map((h) => parseInt(h, 16)));
+  const wTitle = u16("Песня"), wArtist = u16("Артист");
+  const cdPayload = concat(le16(wTitle.length), le16(wArtist.length), le16(0), le16(0), le16(0), wTitle, wArtist);
+  const cdObject = concat(guid("3326b2758e66cf11a6d900aa0062ce6c"), le64(24 + cdPayload.length), cdPayload);
+  const wmaHeaderSize = 30 + cdObject.length;
+  const wma = concat(guid("3026b2758e66cf11a6d900aa0062ce6c"), le64(wmaHeaderSize), le32(1), new Uint8Array(2), cdObject);
+  const wtags = await api.readWmaTags(new File([wma], "x.wma"));
+  eq(wtags && wtags.title, "Песня", "WMA: Title");
+  eq(wtags && wtags.artist, "Артист", "WMA: Author");
 
   const payloads = [
     { name: "001 - Артист - Песня.mp3", data: new Uint8Array([1, 2, 3, 4, 5]) },

@@ -96,7 +96,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.3</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.4</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -408,7 +408,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.3 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.4 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -755,6 +755,114 @@ function readFlacTags(file){
     return (out.title || out.artist) ? out : null;
   }).catch(function(){ return null; });
 }
+/* APEv2: тег лежит в конце файла, перед возможным ID3v1 */
+function readApeTags(file){
+  var tail = Math.min(file.size, 1024*1024);
+  return file.slice(file.size - tail).arrayBuffer().then(function(buf){
+    var u8 = new Uint8Array(buf);
+    var magic = "APETAGEX", idx = -1;
+    for(var i=u8.length-8;i>=0;i--){
+      var ok = true;
+      for(var k=0;k<8;k++){ if(u8[i+k] !== magic.charCodeAt(k)){ ok = false; break; } }
+      if(ok){ idx = i; break; }
+    }
+    if(idx < 0) return null;
+    var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    var size = dv.getUint32(idx + 12, true);
+    var count = dv.getUint32(idx + 16, true);
+    if(size < 32) return null;
+    var start = idx + 32 - size;
+    if(start < 0) return null;
+    var pos = start, out = {};
+    for(var n=0;n<count && pos + 8 <= idx;n++){
+      var vlen = dv.getUint32(pos, true);
+      pos += 8;
+      var keyEnd = pos;
+      while(keyEnd < idx && u8[keyEnd] !== 0) keyEnd++;
+      var key = String.fromCharCode.apply(null, u8.subarray(pos, keyEnd)).toLowerCase();
+      pos = keyEnd + 1;
+      if(pos + vlen > u8.length) break;
+      var val = new TextDecoder("utf-8").decode(u8.subarray(pos, pos + vlen)).replace(/\u0000+$/g, "").trim();
+      pos += vlen;
+      if(key === "title" && !out.title) out.title = val;
+      else if(key === "artist" && !out.artist) out.artist = val;
+      else if(key === "album" && !out.album) out.album = val;
+    }
+    return (out.title || out.artist) ? out : null;
+  }).catch(function(){ return null; });
+}
+/* ASF/WMA: метаданные в объектах заголовка файла */
+var _ASF_HEADER = "3026b2758e66cf11a6d900aa0062ce6c";
+var _ASF_CD     = "3326b2758e66cf11a6d900aa0062ce6c";
+var _ASF_ECD    = "40a4d0d207e3d21197f000a0c95ea850";
+function _hexGuid(u8, off){
+  var s = "";
+  for(var i=0;i<16;i++) s += ("0" + u8[off+i].toString(16)).slice(-2);
+  return s;
+}
+function _utf16le(u8, start, len){
+  return new TextDecoder("utf-16le").decode(u8.subarray(start, start + len)).replace(/\u0000+$/g, "").trim();
+}
+function _u64(dv, off){
+  return dv.getBigUint64 ? Number(dv.getBigUint64(off, true)) : (dv.getUint32(off, true) + dv.getUint32(off + 4, true) * 4294967296);
+}
+function _asfContentDescription(u8, start, end, out){
+  var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  if(start + 10 > end) return;
+  var lens = [], p = start;
+  for(var i=0;i<5;i++){ lens.push(dv.getUint16(p, true)); p += 2; }
+  var fields = ["title", "artist", "copyright", "description", "rating"];
+  for(var j=0;j<5;j++){
+    if(p + lens[j] > end) break;
+    var val = _utf16le(u8, p, lens[j]);
+    p += lens[j];
+    if(fields[j] === "title" && val && !out.title) out.title = val;
+    else if(fields[j] === "artist" && val && !out.artist) out.artist = val;
+  }
+}
+function _asfExtended(u8, start, end, out){
+  var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  if(start + 2 > end) return;
+  var n = dv.getUint16(start, true), p = start + 2;
+  for(var i=0;i<n && p + 2 <= end;i++){
+    var nl = dv.getUint16(p, true);
+    p += 2;
+    if(p + nl + 4 > end) break;
+    var name = _utf16le(u8, p, nl).toLowerCase();
+    p += nl;
+    var type = dv.getUint16(p, true);
+    p += 2;
+    var vl = dv.getUint16(p, true);
+    p += 2;
+    if(p + vl > end) break;
+    var val = type === 0 ? _utf16le(u8, p, vl) : "";
+    p += vl;
+    if(!val) continue;
+    if((name === "title" || name === "wm/title") && !out.title) out.title = val;
+    else if((name === "author" || name === "wm/artist" || name === "wm/albumartist") && !out.artist) out.artist = val;
+    else if(name === "wm/albumtitle" && !out.album) out.album = val;
+  }
+}
+function readWmaTags(file){
+  return file.slice(0, 1024*1024).arrayBuffer().then(function(buf){
+    var u8 = new Uint8Array(buf);
+    if(u8.length < 30 || _hexGuid(u8, 0) !== _ASF_HEADER) return null;
+    var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    var hsize = _u64(dv, 16);
+    var count = dv.getUint32(24, true);
+    var end = Math.min(u8.length, hsize || u8.length);
+    var p = 30, out = {};
+    for(var i=0;i<count && p + 24 <= end;i++){
+      var g = _hexGuid(u8, p);
+      var osize = _u64(dv, p + 16);
+      if(osize < 24 || p + osize > end) break;
+      if(g === _ASF_CD) _asfContentDescription(u8, p + 24, p + osize, out);
+      else if(g === _ASF_ECD) _asfExtended(u8, p + 24, p + osize, out);
+      p += osize;
+    }
+    return (out.title || out.artist) ? out : null;
+  }).catch(function(){ return null; });
+}
 var _probeQueue = [], _probeActive = 0;
 /* MP4/M4A: moov → udta → meta → ilst, тексты в атомах ©nam / ©ART / ©alb */
 function _mp4Atoms(u8, start, end){
@@ -842,7 +950,6 @@ function readOggTags(file){
     return (out.title || out.artist) ? out : null;
   }).catch(function(){ return null; });
 }
-var _probeQueue = [], _probeActive = 0;
 function probeDuration(file){
   if(typeof Audio !== "function") return Promise.resolve(0);
   return new Promise(function(resolve){
@@ -890,6 +997,8 @@ function inspectEntry(e){
     if(extn === "flac") return readFlacTags(e.file);
     if(extn === "m4a" || extn === "alac") return readMp4Tags(e.file);
     if(extn === "ogg" || extn === "oga" || extn === "opus") return readOggTags(e.file);
+    if(extn === "ape") return readApeTags(e.file);
+    if(extn === "wma") return readWmaTags(e.file);
     return null;
   }).then(function(tags){
     if(tags){
