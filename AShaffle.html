@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ashuffle</title>
+<style>
+:root{--g:#2a9d5c;--gd:#1f7a46;--gl:#e8f7ee;--bg:#f5f7fa;--c:#fff;--t:#2b2b2b;--m:#6b7280;--b:#e2e8f0;--d:#b91c1c;--h:#f1f5f9;--cb:#fafbfc;--bl:#2563eb;--bll:#dbeafe}
+[data-theme=dark]{--g:#34d399;--gd:#10b981;--gl:#1a3a2a;--bg:#0f1419;--c:#1a1f26;--t:#e5e7eb;--m:#9ca3af;--b:#2d3748;--d:#f87171;--h:#232a33;--cb:#141920;--bl:#60a5fa;--bll:#1e3a5f}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--t);padding:20px 14px 40px}
+.wrap{max-width:940px;margin:0 auto}
+header{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+h1{margin:0;font-size:30px;color:var(--g)}
+.ver{color:var(--m);font-size:12px}
+.tag{color:var(--m);font-style:italic;margin:0 0 4px;font-size:13px}
+.hint{color:var(--m);font-size:13px;margin:0 0 16px;line-height:1.5}
+.tt{margin-left:auto;background:var(--c);border:1px solid var(--b);color:var(--t);width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:17px}
+.tt:hover{background:var(--h)}
+.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:14px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:8px;border:1px solid var(--b);background:var(--c);color:var(--t);font-size:14px;cursor:pointer;font-family:inherit}
+.btn:hover{background:var(--h)}
+.btn:active{transform:scale(.97)}
+.btn.bl{background:var(--bl);color:#fff;border-color:var(--bl);font-weight:600}
+.btn.bl:hover{filter:brightness(.9)}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn.sm{padding:5px 10px;font-size:12px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sp{flex:1}
+.dz{border:2px dashed var(--b);border-radius:12px;padding:26px 18px;text-align:center;color:var(--m);cursor:pointer;background:var(--cb);margin-bottom:12px;transition:.2s}
+.dz:hover,.dz.over{border-color:var(--g);background:var(--gl);color:var(--gd)}
+.dz .big{font-size:32px;display:block;margin-bottom:4px}
+.dz .sm{font-size:12px;margin-top:6px;opacity:.8}
+.fl{max-height:240px;overflow-y:auto;border:1px solid var(--b);border-radius:8px;font-family:Consolas,monospace;font-size:12.5px;background:var(--cb)}
+.fl:empty::after{content:"Список пуст — перетащите файлы или папку выше";display:block;padding:18px;text-align:center;color:var(--m);font-family:inherit;font-size:13px}
+.fi{display:flex;align-items:center;padding:6px 10px;border-bottom:1px solid var(--b);gap:8px}
+.fi:last-child{border-bottom:none}
+.fi .n{color:var(--m);min-width:30px}
+.fi .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fi .path{color:var(--m);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
+.fi .ar{color:var(--gd);font-size:11px;background:var(--gl);padding:1px 6px;border-radius:4px;white-space:nowrap}
+.fi .ex{color:var(--m);font-size:10px;text-transform:uppercase;padding:1px 4px;border-radius:3px;border:1px solid var(--b)}
+.fi .rm{background:none;border:none;color:var(--m);cursor:pointer;font-size:14px;padding:0 4px}
+.fi .rm:hover{color:var(--d)}
+.pw{display:none;margin-top:12px}
+.pw.show{display:block}
+.pi{display:flex;justify-content:space-between;font-size:12px;color:var(--m);margin-bottom:6px}
+.pb{height:8px;background:var(--b);border-radius:4px;overflow:hidden}
+.pf{height:100%;background:linear-gradient(90deg,var(--g),var(--gd));width:0;transition:width .15s}
+.st{font-size:12.5px;color:var(--m);min-height:16px}
+h3{margin:0 0 10px;font-size:15px}
+.bg{display:inline-block;background:var(--gl);color:var(--gd);font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:600}
+.results{display:none}
+.results.show{display:block}
+.res-item{display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid var(--b);gap:8px;font-size:13px}
+.res-item:last-child{border-bottom:none}
+.res-item .n{color:var(--m);min-width:36px;font-family:Consolas,monospace}
+.res-item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:Consolas,monospace;font-size:12.5px}
+.res-item .ar{color:var(--gd);font-size:11px;background:var(--gl);padding:1px 6px;border-radius:4px;white-space:nowrap}
+.res-item .sz{color:var(--m);font-size:11px;min-width:60px;text-align:right}
+.res-list{max-height:320px;overflow-y:auto;border:1px solid var(--b);border-radius:8px;background:var(--cb)}
+.big-btn{display:none;width:100%;padding:18px;border:none;border-radius:14px;background:linear-gradient(135deg,#2a9d5c,#1f7a46);color:#fff;font-size:22px;font-weight:700;cursor:pointer;margin:14px 0;box-shadow:0 6px 20px rgba(42,157,92,.35);transition:all .2s;letter-spacing:.5px}
+.big-btn:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(42,157,92,.5)}
+.big-btn:active{transform:translateY(0)}
+.big-btn:disabled{opacity:.6;cursor:wait;transform:none}
+.opt{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--m);margin:0 0 8px;padding:4px 0}
+.opt input{width:16px;height:16px;cursor:pointer}
+.opt label{cursor:pointer;user-select:none}
+.warn{display:none;color:#b45309;font-size:12px;margin-bottom:10px;padding:8px 10px;background:#fef3c7;border-radius:6px;border:1px solid #fde68a;line-height:1.5}
+[data-theme=dark] .warn{color:#fbbf24;background:#3a2e1a;border-color:#5a4620}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>Ashuffle</h1><span class="ver">v8.6</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<p class="tag">Исполнители врозь — музыка вместе</p>
+<p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — и скачайте результат в свою папку.</p>
+
+<div class="dz" id="dz"><span class="big">🎵</span><b>Перетащите файлы или папку сюда</b><div class="sm">или нажмите, чтобы выбрать</div></div>
+<input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff" style="display:none">
+<input type="file" id="fdir" webkitdirectory directory multiple style="display:none">
+
+<div class="card">
+<h3>Файлы <span class="bg" id="cnt">0</span></h3>
+<div class="row" style="margin-bottom:10px">
+  <button class="btn" id="add" type="button">➕ Добавить файлы</button>
+  <button class="btn" id="addDir" type="button">📁 Добавить папку</button>
+  <button class="btn" id="clr" type="button">🗑 Очистить</button>
+</div>
+<div class="fl" id="list"></div>
+</div>
+
+<div class="opt">
+  <input type="checkbox" id="numbered" checked>
+  <label for="numbered">Смешивать файлы в случайном порядке и нумеровать</label>
+</div>
+<div class="opt">
+  <input type="checkbox" id="onlineUse" checked>
+  <label for="onlineUse">Уточнять исполнителя и название трека через Интернет</label>
+</div>
+
+<button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
+
+<div class="pw" id="pw"><div class="pi"><span id="pl">Обработка…</span><span id="pp">0%</span></div><div class="pb"><div class="pf" id="pf"></div></div></div>
+
+<div class="card results" id="results">
+<h3>Готово! <span class="bg" id="rcnt">0</span></h3>
+<div class="warn" id="fsHint">⚠️ Выбор папки доступен только при открытии через HTTPS или <code>localhost</code>. Сейчас все файлы сохранятся одним ZIP-архивом.</div>
+<div class="row" style="margin-bottom:10px">
+  <button class="btn bl" id="dlAll" type="button" title="Сохранить результат">💾 Скачать все в папку</button>
+  <span class="sp"></span>
+  <button class="btn" id="again" type="button">🔁 Заново</button>
+</div>
+<div class="res-list" id="resList"></div>
+</div>
+
+<div class="st" id="st">Готов к работе</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+var EX={mp3:1,flac:1,m4a:1,ogg:1,wav:1,aac:1,wma:1,opus:1,aiff:1,alac:1,ape:1};
+var files=[];
+var results=[];
+var busy=false;
+var dirty=false;
+
+var CAN_PICK_DIR  = typeof window.showDirectoryPicker === "function";
+var CAN_PICK_FILE = typeof window.showSaveFilePicker  === "function";
+var CAN_ITUNES    = typeof fetch === "function" && location.protocol !== "file:";
+
+function $(i){return document.getElementById(i)}
+function ext(n){var m=n.match(/\.([^.]+)$/);return m?m[1].toLowerCase():""}
+function norm(s){
+  if(!s) return "";
+  return s.normalize
+    ? s.normalize("NFKC").trim().toLowerCase().replace(/\s+/g," ")
+    : s.trim().toLowerCase().replace(/\s+/g," ");
+}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function fmtSize(b){if(b<1024)return b+" Б";if(b<1048576)return (b/1024).toFixed(1)+" КБ";return (b/1048576).toFixed(1)+" МБ"}
+function theme(t){if(t==="dark"){document.documentElement.setAttribute("data-theme","dark");$("tt").textContent="☀️"}else{document.documentElement.removeAttribute("data-theme");$("tt").textContent="🌙"}}
+
+/* ============================================================
+   1. ЛОКАЛЬНЫЙ ПАРСЕР
+   ============================================================ */
+function cleanJunk(s){
+  return s
+    .replace(/\s*[\(\[]\s*(official\s*(video|audio|music\s*video)?|lyrics?|hd|hq|explicit|remaster(ed)?(\s*\d{4})?|deluxe(\s*edition)?|bonus\s*track)\s*[\)\]]/gi, "")
+    .replace(/\s*[\(\[]\s*(feat\.?|ft\.?|при\s*уч\.?)\s+[^\)\]]+[\)\]]/gi, "")
+    .replace(/\s*\([a-z0-9-]+\.[a-z]{2,}\)/gi, "")
+    .replace(/\s+official\s+music\s+video\b/gi, "")
+    .replace(/\s+music\s+video\b/gi, "")
+    .replace(/\s+official\s+video\b/gi, "")
+    .replace(/\s+official\s+audio\b/gi, "")
+    .replace(/\s+lyric\s+video\b/gi, "")
+    .replace(/\s+uuid[-\s][\w-]+/gi, "")
+    .replace(/\s*[-–—]\s*(official\s*(video|audio)|lyrics?|hd|hq|remaster(ed)?)\s*$/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function stripTrackPrefix(s){
+  var cleaned = s, prev, iter = 0;
+  do{
+    prev = cleaned;
+    cleaned = cleaned.replace(/^\s*(track|трек)\s*\d+\s*[._\-\s–—−]*/i, "");
+    cleaned = cleaned.replace(/^\s*[\(\{\[]\s*\d+\s*[\)\}\]]\s*[._\-\s–—−]*/, "");
+    cleaned = cleaned.replace(/^\s*\d+\s*[._\-\s–—−]+/, "");
+    cleaned = cleaned.replace(/^[\s._\-–—−]+/, "");
+    iter++;
+  }while(cleaned !== prev && iter < 15);
+  return cleaned.trim();
+}
+function trySplit(s){
+  var candidates = [];
+  var m = s.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+  if(m && m[1].trim() && m[2].trim()){
+    candidates.push({ artist: m[1].trim(), title: m[2].trim(), score: 10 });
+  }
+  if(!m){
+    m = s.match(/^(.+?)_+[-–—]_+(.+)$/);
+    if(m && m[1].trim() && m[2].trim()){
+      candidates.push({ artist: m[1].replace(/_/g," ").trim(), title: m[2].replace(/_/g," ").trim(), score: 9 });
+    }
+  }
+  if(!m){
+    m = s.match(/^(.+?)__+(.+)$/);
+    if(m && m[1].trim() && m[2].trim()){
+      candidates.push({ artist: m[1].replace(/_/g," ").trim(), title: m[2].replace(/_/g," ").trim(), score: 8 });
+    }
+  }
+  if(!m){
+    m = s.match(/^([^_]+)_+(.+)$/);
+    if(m && m[1].trim() && m[2].trim()){
+      candidates.push({ artist: m[1].replace(/_/g," ").trim(), title: m[2].replace(/_/g," ").trim(), score: 5 });
+    }
+  }
+  if(!candidates.length && (s.match(/-/g) || []).length >= 2){
+    var parts = s.split("-").map(function(x){return x.trim()}).filter(Boolean);
+    if(parts.length >= 3){
+      candidates.push({
+        artist: parts.slice(0, -1).join(" "),
+        title:  parts[parts.length - 1],
+        score: 1,
+        _raw: s
+      });
+    }
+  }
+  if(!candidates.length && s.indexOf(" ") !== -1){
+    var lastSpace = s.lastIndexOf(" ");
+    var left = s.slice(0, lastSpace).trim();
+    var right = s.slice(lastSpace + 1).trim();
+    if(left && right && /[a-zA-Zа-яА-ЯёЁ]/.test(left) && /[a-zA-Zа-яА-ЯёЁ]/.test(right)){
+      candidates.push({ artist: left, title: right, score: 3 });
+    }
+  }
+  if(!candidates.length && /[.]/.test(s)){
+    var parts2 = s.split(".");
+    if(parts2.length >= 2){
+      var left2 = parts2.slice(0, -1).join(".").trim();
+      var right2 = parts2[parts2.length-1].trim();
+      if(left2 && right2 && /[a-zA-Zа-яА-ЯёЁ]/.test(left2) && /[a-zA-Zа-яА-ЯёЁ]/.test(right2)){
+        candidates.push({ artist: left2, title: right2, score: 2 });
+      }
+    }
+  }
+  if(!candidates.length) return { artist: "", title: s, score: 0, _raw: s };
+  candidates.sort(function(a,b){ return b.score - a.score; });
+  return candidates[0];
+}
+function parseTrackInfo(filename){
+  var stem = filename.replace(/\.[^.]+$/, "");
+  var cleaned = stripTrackPrefix(stem);
+  cleaned = cleanJunk(cleaned);
+  var split = trySplit(cleaned);
+  var artist = split.artist, title = split.title;
+  var rawForSearch = split._raw || cleaned;
+  title = cleanJunk(title);
+  if(!/[a-zA-Zа-яА-ЯёЁ]/.test(title)) title = "unknown_track";
+  if(artist && !/[a-zA-Zа-яА-ЯёЁ]/.test(artist)) artist = "";
+  return { artist: artist, title: title, _raw: rawForSearch, score: split.score || 0 };
+}
+
+/* ============================================================
+   2. ВАЛИДАЦИЯ
+   ============================================================ */
+var MODIFIERS = {
+  remaster:1, remastered:1, remix:1, mix:1, edit:1, version:1,
+  live:1, acoustic:1, instrumental:1, extended:1, radio:1,
+  official:1, video:1, audio:1, hd:1, hq:1,
+  mono:1, stereo:1, deluxe:1, edition:1, bonus:1, track:1,
+  demo:1, original:1, the:1, a:1, an:1, and:1, of:1, in:1,
+  to:1, on:1, for:1, by:1, with:1
+};
+var SUSPICIOUS = { mashup:1, bootleg:1, remix:1, cover:1, parody:1, karaoke:1 };
+
+function tokens(s){
+  return String(s || "").toLowerCase()
+    .replace(/[\(\)\[\]\{\},]/g, " ")
+    .replace(/[^\wа-яё\s]/gi, " ")
+    .split(/\s+/)
+    .filter(function(w){ return w.length > 0; });
+}
+function unique(arr){
+  var seen = {}, out = [];
+  arr.forEach(function(w){ if(!seen[w]){ seen[w]=1; out.push(w); } });
+  return out;
+}
+function isGoodMatch(query, mbArtist, mbTitle){
+  var combined = (mbArtist || "") + " " + (mbTitle || "");
+  var q = unique(tokens(query));
+  var r = unique(tokens(combined));
+  var sigQ = q.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
+  var sigR = r.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
+  if(!sigQ.length) return true;
+  var allIn = sigQ.every(function(w){ return r.indexOf(w) >= 0; });
+  if(!allIn){
+    var allIn2 = sigR.every(function(w){ return q.indexOf(w) >= 0; });
+    return allIn2;
+  }
+  var extra = sigR.filter(function(w){ return q.indexOf(w) < 0; });
+  for(var k in SUSPICIOUS){
+    if(extra.indexOf(k) >= 0 && q.indexOf(k) < 0) return false;
+  }
+  if(extra.length > sigQ.length) return false;
+  return true;
+}
+
+/* ============================================================
+   3. MusicBrainz + iTunes (retry 503)
+   ============================================================ */
+var _mbCache = {}, _lastMBRequest = 0;
+
+function _mbFetch(url, attempt){
+  attempt = attempt || 0;
+  return fetch(url, { headers: { "User-Agent": "Ashuffle/8.6 ( https://example.com/ashuffle )" } })
+    .then(function(r){
+      if(r.status === 503 && attempt < 2){
+        console.warn("MB 503, retry in 2s (attempt " + (attempt+1) + ")");
+        return new Promise(function(resolve){ setTimeout(resolve, 2000); })
+          .then(function(){ return _mbFetch(url, attempt + 1); });
+      }
+      if(!r.ok) throw new Error("MB " + r.status);
+      return r;
+    });
+}
+function _mbRequest(query){
+  var key = "mb|" + query.toLowerCase();
+  if(Object.prototype.hasOwnProperty.call(_mbCache, key)) return Promise.resolve(_mbCache[key]);
+  var now = Date.now(), wait = Math.max(0, 1100 - (now - _lastMBRequest));
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      _lastMBRequest = Date.now();
+      var url = "https://musicbrainz.org/ws/2/recording/?query=" +
+                encodeURIComponent(query) + "&fmt=json&limit=5";
+      _mbFetch(url)
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          _mbCache[key] = data.recordings || [];
+          resolve(_mbCache[key]);
+        })
+        .catch(function(){ _mbCache[key] = []; resolve([]); });
+    }, wait);
+  });
+}
+function lookupMusicBrainzByRecording(term){
+  return _mbRequest('recording:"' + term.replace(/"/g,"") + '"');
+}
+function lookupMusicBrainzByArtistTitle(artist, title){
+  var parts = [];
+  if(artist) parts.push('artist:"' + artist.replace(/"/g,"") + '"');
+  if(title)  parts.push('recording:"' + title.replace(/"/g,"") + '"');
+  return _mbRequest(parts.join(" AND "));
+}
+function pickMusicBrainzResult(recordings, query){
+  if(!recordings || !recordings.length) return null;
+  for(var i=0;i<recordings.length;i++){
+    var rec = recordings[i];
+    if(!rec["artist-credit"] || !rec["artist-credit"].length) continue;
+    var mbArtist = rec["artist-credit"][0].name;
+    var mbTitle  = rec.title;
+    if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
+    if(!isGoodMatch(query, mbArtist, mbTitle)) continue;
+    return { artist: mbArtist, title: cleanMBTitle(mbTitle), source: "MusicBrainz" };
+  }
+  return null;
+}
+var _STRIP_PAREN = { remaster:1, remastered:1, digital:1, deluxe:1, edition:1,
+                     bonus:1, version:1, explicit:1, clean:1, mono:1,
+                     stereo:1, extended:1, edit:1 };
+function cleanMBTitle(t){
+  return t.replace(/\s*\(([^)]*)\)/g, function(m, inner){
+    var words = inner.toLowerCase().split(/[\s,\-]+/).filter(Boolean);
+    if(!words.length) return m;
+    var allStrippable = words.every(function(w){
+      return _STRIP_PAREN[w] || /^\d{4}$/.test(w) || /^\d+$/.test(w);
+    });
+    return allStrippable ? "" : m;
+  }).replace(/\s+/g, " ").trim();
+}
+var _itCache = {}, _lastITRequest = 0;
+function lookupITunes(term){
+  if(!CAN_ITUNES) return Promise.resolve(null);
+  var key = "it|" + term.toLowerCase();
+  if(Object.prototype.hasOwnProperty.call(_itCache, key)) return Promise.resolve(_itCache[key]);
+  var now = Date.now(), wait = Math.max(0, 3200 - (now - _lastITRequest));
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      _lastITRequest = Date.now();
+      var url = "https://itunes.apple.com/search?term=" + encodeURIComponent(term) + "&media=music&entity=song&limit=5";
+      fetch(url)
+        .then(function(r){ if(!r.ok) throw new Error("iTunes " + r.status); return r.json(); })
+        .then(function(data){
+          var out = null;
+          if(data.resultCount && data.results){
+            for(var i=0;i<data.results.length;i++){
+              var res = data.results[i];
+              if(!res.trackName || !res.artistName) continue;
+              if(!/[a-zA-Zа-яА-ЯёЁ]/.test(res.trackName)) continue;
+              if(!isGoodMatch(term, res.artistName, res.trackName)) continue;
+              out = { artist: res.artistName, title: cleanMBTitle(res.trackName), source: "iTunes" };
+              break;
+            }
+          }
+          _itCache[key] = out; resolve(out);
+        })
+        .catch(function(){ _itCache[key] = null; resolve(null); });
+    }, wait);
+  });
+}
+
+/* ============================================================
+   4. ИМЯ ФАЙЛА С НОМЕРОМ (001, 002, ...)
+   ============================================================ */
+function pad3(n){ 
+  var s = String(n);
+  while(s.length < 3) s = "0" + s;
+  return s;
+}
+function makeName(info, originalExt, trackNum){
+  var artist = info && info.artist ? info.artist.trim() : "";
+  var title  = info && info.title  ? info.title.trim()  : "unknown_track";
+  if(!artist || !/[a-zA-Zа-яА-ЯёЁ]/.test(artist)) artist = "unknown_artist";
+  if(!title || !/[a-zA-Zа-яА-ЯёЁ0-9]/.test(title))  title  = "unknown_track";
+  function safe(s){ return s.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim(); }
+  var prefix = "";
+  if(trackNum && typeof trackNum === "number" && trackNum > 0){
+    prefix = pad3(trackNum) + " - ";
+  }
+  return prefix + safe(artist) + " - " + safe(title) + (originalExt || "");
+}
+
+/* ============================================================
+   5. ПЕРЕМЕШИВАНИЕ
+   ============================================================ */
+function shuf(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
+function inter(g){
+  var b={};
+  Object.keys(g).forEach(function(a){b[a]=shuf(g[a])});
+  var tot=0;Object.keys(b).forEach(function(a){tot+=b[a].length});
+  var r=[],last=null;
+  while(r.length<tot){
+    var c=Object.keys(b).filter(function(a){return b[a].length>0&&a!==last});
+    if(!c.length)c=Object.keys(b).filter(function(a){return b[a].length>0});
+    if(!c.length)break;
+    var w=c.map(function(a){return b[a].length});
+    var tw=w.reduce(function(s,x){return s+x},0);
+    var rr=Math.random()*tw,ch=c[c.length-1];
+    for(var i=0;i<c.length;i++){rr-=w[i];if(rr<=0){ch=c[i];break}}
+    r.push(b[ch].pop());
+    last=ch;
+  }
+  return r;
+}
+
+/* ============================================================
+   6. ID3v2.4 + File с новым именем
+   ============================================================ */
+function buildId3v24Tag(frames){
+  var enc = new TextEncoder();
+  var chunks = [];
+  frames.forEach(function(f){
+    var textBytes = enc.encode(f.value);
+    var frameDataLen = 1 + textBytes.length;
+    var frame = new Uint8Array(10 + frameDataLen);
+    frame[0]=f.id.charCodeAt(0);
+    frame[1]=f.id.charCodeAt(1);
+    frame[2]=f.id.charCodeAt(2);
+    frame[3]=f.id.charCodeAt(3);
+    frame[4] = (frameDataLen >> 21) & 0x7f;
+    frame[5] = (frameDataLen >> 14) & 0x7f;
+    frame[6] = (frameDataLen >> 7) & 0x7f;
+    frame[7] = frameDataLen & 0x7f;
+    frame[8]=0; frame[9]=0;
+    frame[10]=0x03;
+    frame.set(textBytes, 11);
+    chunks.push(frame);
+  });
+  var totalData = 0;
+  chunks.forEach(function(c){ totalData += c.length; });
+  var header = new Uint8Array(10);
+  header[0]=0x49; header[1]=0x44; header[2]=0x33;
+  header[3]=0x04; header[4]=0x00; header[5]=0x00;
+  header[6] = (totalData >> 21) & 0x7f;
+  header[7] = (totalData >> 14) & 0x7f;
+  header[8] = (totalData >> 7) & 0x7f;
+  header[9] = totalData & 0x7f;
+  var result = new Uint8Array(10 + totalData);
+  result.set(header, 0);
+  var off = 10;
+  chunks.forEach(function(c){ result.set(c, off); off += c.length; });
+  return result;
+}
+function makeRenamedFile(originalFile, finalName, num, artist, title){
+  return new Promise(function(resolve){
+    if(ext(originalFile.name) !== "mp3"){
+      try { resolve(new File([originalFile], finalName, { type: originalFile.type || "audio/mpeg" })); }
+      catch(e){ resolve(originalFile); }
+      return;
+    }
+    originalFile.arrayBuffer().then(function(buf){
+      try{
+        var u8 = new Uint8Array(buf), offset = 0;
+        if(u8[0]===0x49 && u8[1]===0x44 && u8[2]===0x33){
+          var sz = ((u8[6]&0x7f)<<21)|((u8[7]&0x7f)<<14)|((u8[8]&0x7f)<<7)|(u8[9]&0x7f);
+          offset = 10 + sz;
+        }
+        var frames = [{ id: "TRCK", value: String(num) }];
+        if(title && title !== "unknown_track")  frames.push({ id: "TIT2", value: title });
+        if(artist && artist !== "unknown_artist") frames.push({ id: "TPE1", value: artist });
+        var tag = buildId3v24Tag(frames);
+        var audio = u8.subarray(offset);
+        var out = new Uint8Array(tag.length + audio.length);
+        out.set(tag, 0);
+        out.set(audio, tag.length);
+        resolve(new File([out], finalName, { type: "audio/mpeg" }));
+      }catch(e){
+        console.error("ID3 write failed:", originalFile.name, e);
+        try { resolve(new File([originalFile], finalName, { type: originalFile.type || "audio/mpeg" })); }
+        catch(e2){ resolve(originalFile); }
+      }
+    }).catch(function(){
+      try { resolve(new File([originalFile], finalName, { type: originalFile.type || "audio/mpeg" })); }
+      catch(e2){ resolve(originalFile); }
+    });
+  });
+}
+
+/* ============================================================
+   7. UI
+   ============================================================ */
+function stt(m){$("st").textContent=m}
+function pshow(l){$("pw").classList.add("show");$("pl").textContent=l||"Обработка…";$("pp").textContent="0%";$("pf").style.width="0%"}
+function pup(d,t,l){var p=t>0?Math.round(d/t*100):0;$("pf").style.width=p+"%";$("pp").textContent=p+"%";$("pl").textContent=l||("Обработано "+d+" из "+t)}
+function phide(){$("pw").classList.remove("show")}
+
+function updateGoBtn(){
+  var btn=$("go");
+  if(files.length>0 && dirty && !busy){
+    btn.style.display="block"; btn.disabled=false; btn.textContent="🎲 Ashuffle this!";
+  } else if(busy){
+    btn.style.display="block"; btn.disabled=true; btn.textContent="⏳ Обработка…";
+  } else {
+    btn.style.display="none";
+  }
+}
+
+function draw(){
+  var L=$("list");L.innerHTML="";
+  files.forEach(function(f,i){
+    var info=parseTrackInfo(f.name);
+    var a=info.artist||"—";
+    var e=ext(f.name).toUpperCase();
+    var pathInfo=f.path?('<span class="path" title="'+esc(f.path)+'">'+esc(f.path)+'</span>'):"";
+    var d=document.createElement("div");d.className="fi";
+    d.innerHTML='<span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(f.name)+'">'+esc(f.name)+'</span>'+pathInfo+'<span class="ex">'+e+'</span><span class="ar">'+esc(a)+'</span><button class="rm" data-i="'+i+'" type="button">✕</button>';
+    L.appendChild(d);
+  });
+  $("cnt").textContent=files.length;
+  Array.prototype.forEach.call(L.querySelectorAll(".rm"),function(b){
+    b.addEventListener("click",function(e){
+      if(busy) return;
+      files.splice(+e.target.dataset.i,1);
+      if(files.length===0){
+        results=[];$("results").classList.remove("show");phide();dirty=false;stt("Очищено");
+      } else {
+        results=[];$("results").classList.remove("show");drawResults();dirty=true;
+        stt("Файлов: "+files.length+". Нажмите «Ashuffle this!»");
+      }
+      draw();updateGoBtn();
+    });
+  });
+  updateGoBtn();
+}
+
+function drawResults(){
+  var L=$("resList");L.innerHTML="";
+  results.forEach(function(r,i){
+    var tag=r.isMp3?('<span class="sz">TRCK='+r.trackNum+'</span>'):'<span class="sz">—</span>';
+    var src=r.source?(' <span class="sz" style="font-size:10px;opacity:.7">'+esc(r.source)+'</span>'):'';
+    var d=document.createElement("div");d.className="res-item";
+    d.innerHTML='<span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span>'+src+'<span class="ar">'+esc(r.artist||"—")+'</span>'+tag+'<span class="sz">'+fmtSize(r.size)+'</span><button class="btn sm" data-i="'+i+'" type="button">💾</button>';
+    L.appendChild(d);
+  });
+  $("rcnt").textContent=results.length;
+  Array.prototype.forEach.call(L.querySelectorAll("button[data-i]"),function(b){
+    b.addEventListener("click",function(e){
+      var r=results[+e.target.dataset.i];
+      download(r.file, r.name);
+      stt("Скачан: "+r.name);
+    });
+  });
+}
+
+/* ============================================================
+   8. ASHUFFLE THIS!
+   ============================================================ */
+function runAshuffle(){
+  if(!files.length || busy) return;
+  busy=true; updateGoBtn();
+  $("results").classList.remove("show"); phide();
+  var useOnline = $("onlineUse").checked;
+  var useNumbered = $("numbered").checked;
+
+  var parsed = files.map(function(f){
+    return { source: f, info: parseTrackInfo(f.name) };
+  });
+
+  function phaseOnline(){
+    if(!useOnline) return Promise.resolve();
+    pshow("Уточнение через интернет…");
+    var idx = 0;
+
+    function doOne(p){
+      var a = p.info.artist, t = p.info.title, raw = p.info._raw || "";
+      var fullTerm = (raw || ((a ? a + " " : "") + t))
+        .replace(/[-_]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      return lookupMusicBrainzByRecording(fullTerm).then(function(recs){
+        var found = pickMusicBrainzResult(recs, fullTerm);
+        if(found) return found;
+        if(a && t && t !== "unknown_track"){
+          return lookupMusicBrainzByArtistTitle(a, t).then(function(recs2){
+            var found2 = pickMusicBrainzResult(recs2, a + " " + t);
+            if(found2) return found2;
+            return lookupITunes(fullTerm);
+          });
+        }
+        return lookupITunes(fullTerm);
+      });
+    }
+
+    function nextOne(){
+      if(idx >= parsed.length) return Promise.resolve();
+      var p = parsed[idx];
+      return doOne(p).then(function(found){
+        if(found){
+          p.info.artist = found.artist || p.info.artist;
+          p.info.title  = found.title  || p.info.title;
+          p.info.source = found.source;
+        }
+        idx++;
+        pup(idx, parsed.length, "Интернет: " + idx + " / " + parsed.length);
+        return nextOne();
+      });
+    }
+    return nextOne();
+  }
+
+  phaseOnline().then(function(){
+    var groups = {};
+    parsed.forEach(function(p){
+      var key = norm(p.info.artist || "unknown_artist");
+      (groups[key] = groups[key] || []).push(p);
+    });
+    var ordered = inter(groups);
+
+    phide(); pshow("Обработка файлов…");
+    results = [];
+    var j = 0;
+    function nextFile(){
+      if(j >= ordered.length){
+        phide(); drawResults();
+        $("results").classList.add("show");
+        stt("Готово: "+results.length+" файлов.");
+        busy=false; dirty=false; updateGoBtn();
+        return;
+      }
+      var p = ordered[j], src = p.source, num = j + 1;
+      var isMp3 = ext(src.name) === "mp3";
+      var extPart = (src.name.match(/\.[^.]+$/) || [""])[0];
+      var finalName = makeName(p.info, extPart, useNumbered ? num : null);
+
+      console.log("Rename: " + src.name + " → " + finalName);
+
+      makeRenamedFile(src.file, finalName, num, p.info.artist, p.info.title)
+        .then(function(blob){
+          results.push({
+            file: blob,
+            name: finalName,
+            artist: p.info.artist || "unknown_artist",
+            source: p.info.source || "",
+            size: blob.size,
+            isMp3: isMp3,
+            trackNum: num
+          });
+          pup(j+1, ordered.length);
+          j++; setTimeout(nextFile, 0);
+        });
+    }
+    nextFile();
+  }).catch(function(err){
+    console.error(err);
+    busy=false; updateGoBtn(); phide();
+    stt("Ошибка при обработке: " + err.message);
+  });
+}
+$("go").addEventListener("click", runAshuffle);
+
+/* ============================================================
+   9. ДОБАВЛЕНИЕ
+   ============================================================ */
+function add(input, pathMap){
+  if(busy) return;
+  var added=0, ex={};
+  files.forEach(function(f){ ex[f.name+"|"+(f.file.size||0)]=1; });
+  for(var i=0;i<input.length;i++){
+    var f=input[i], e=ext(f.name);
+    if(!e||!EX[e]) continue;
+    var k=f.name+"|"+f.size;
+    if(ex[k]) continue;
+    ex[k]=1;
+    var p=pathMap && pathMap[i] ? pathMap[i] : (f.webkitRelativePath||"");
+    files.push({name:f.name, file:f, path:p});
+    added++;
+  }
+  if(added===0){draw();return}
+  results=[];$("results").classList.remove("show");drawResults();draw();
+  dirty=true; updateGoBtn();
+  stt("Добавлено: "+added+". Всего: "+files.length+". Нажмите «Ashuffle this!»");
+}
+
+/* ============================================================
+   10. ZIP
+   ============================================================ */
+var _crcTable = (function(){
+  var t = new Uint32Array(256);
+  for (var n = 0; n < 256; n++) {
+    var c = n;
+    for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function _crc32(u8){
+  var c = 0xFFFFFFFF;
+  for (var i = 0; i < u8.length; i++) c = _crcTable[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function _w16(a,o,v){a[o]=v&0xFF;a[o+1]=(v>>>8)&0xFF;}
+function _w32(a,o,v){a[o]=v&0xFF;a[o+1]=(v>>>8)&0xFF;a[o+2]=(v>>>16)&0xFF;a[o+3]=(v>>>24)&0xFF;}
+
+function buildZipBlob(entries, onProgress){
+  var done = 0, total = entries.length;
+  return Promise.all(entries.map(function(e){
+    return e.file.arrayBuffer().then(function(buf){
+      done++;
+      if(onProgress) onProgress(done, total);
+      return { name: e.name, data: new Uint8Array(buf) };
+    });
+  })).then(function(items){
+    var enc = new TextEncoder();
+    var files = items.map(function(it){
+      var nb = enc.encode(it.name);
+      return { nameBytes: nb, nameLen: nb.length, data: it.data, size: it.data.length, crc: _crc32(it.data) };
+    });
+    var localTotal = 0, cdTotal = 0;
+    files.forEach(function(f){
+      f.localSize = 30 + f.nameLen + f.size;
+      f.cdSize = 46 + f.nameLen;
+      localTotal += f.localSize;
+      cdTotal += f.cdSize;
+    });
+    var out = new Uint8Array(localTotal + cdTotal + 22);
+    var off = 0;
+    var localOffsets = [];
+    files.forEach(function(f){
+      localOffsets.push(off);
+      _w32(out, off, 0x04034b50); off += 4;
+      _w16(out, off, 20); off += 2;
+      _w16(out, off, 0x0800); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w32(out, off, f.crc); off += 4;
+      _w32(out, off, f.size); off += 4;
+      _w32(out, off, f.size); off += 4;
+      _w16(out, off, f.nameLen); off += 2;
+      _w16(out, off, 0); off += 2;
+      out.set(f.nameBytes, off); off += f.nameLen;
+      out.set(f.data, off); off += f.size;
+    });
+    var cdOffset = off;
+    files.forEach(function(f, i){
+      _w32(out, off, 0x02014b50); off += 4;
+      _w16(out, off, 20); off += 2;
+      _w16(out, off, 20); off += 2;
+      _w16(out, off, 0x0800); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w32(out, off, f.crc); off += 4;
+      _w32(out, off, f.size); off += 4;
+      _w32(out, off, f.size); off += 4;
+      _w16(out, off, f.nameLen); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w16(out, off, 0); off += 2;
+      _w32(out, off, 0); off += 4;
+      _w32(out, off, localOffsets[i]); off += 4;
+      out.set(f.nameBytes, off); off += f.nameLen;
+    });
+    var cdSize = off - cdOffset;
+    _w32(out, off, 0x06054b50); off += 4;
+    _w16(out, off, 0); off += 2;
+    _w16(out, off, 0); off += 2;
+    _w16(out, off, files.length); off += 2;
+    _w16(out, off, files.length); off += 2;
+    _w32(out, off, cdSize); off += 4;
+    _w32(out, off, cdOffset); off += 4;
+    _w16(out, off, 0); off += 2;
+    return new Blob([out], { type: "application/zip" });
+  });
+}
+
+/* ============================================================
+   11. СКАЧИВАНИЕ
+   ============================================================ */
+function download(file,name){
+  var url=URL.createObjectURL(file);
+  var a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url)},30000);
+}
+
+function saveAllToDir(dirHandle){
+  pshow("Сохранение в «" + dirHandle.name + "»…");
+  var ch = Promise.resolve();
+  var usedNames = {};
+  results.forEach(function(r, i){
+    ch = ch.then(function(){
+      var name = r.name;
+      if(usedNames[name]){
+        usedNames[name]++;
+        var m = name.match(/^(.*)(\.[^.]+)$/);
+        name = m[1] + "_" + usedNames[name] + m[2];
+      } else {
+        usedNames[name] = 1;
+      }
+      return dirHandle.getFileHandle(name, { create: true })
+        .then(function(fh){ return fh.createWritable(); })
+        .then(function(w){ return w.write(r.file).then(function(){ return w.close(); }); })
+        .then(function(){ pup(i+1, results.length); });
+    });
+  });
+  return ch.then(function(){ return dirHandle.name; });
+}
+
+function downloadAsZipViaAnchor(){
+  pshow("Подготовка ZIP…");
+  return buildZipBlob(
+    results.map(function(r){ return { name: r.name, file: r.file }; }),
+    function(done, total){ pup(done, total, "Читаю файл " + done + " из " + total); }
+  ).then(function(blob){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = "ashuffle.zip";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+    phide();
+    stt("ZIP сохранён: " + results.length + " файлов");
+  });
+}
+
+function downloadAsZip(){
+  if(!results.length) return Promise.resolve();
+  if(CAN_PICK_FILE){
+    var pickPromise;
+    try{
+      pickPromise = window.showSaveFilePicker({
+        suggestedName: "ashuffle.zip",
+        types: [{ description: "ZIP archive", accept: { "application/zip": [".zip"] } }]
+      });
+    } catch(e){
+      return downloadAsZipViaAnchor();
+    }
+    return pickPromise.then(function(handle){
+      pshow("Подготовка ZIP…");
+      return buildZipBlob(
+        results.map(function(r){ return { name: r.name, file: r.file }; }),
+        function(done, total){ pup(done, total, "Читаю файл " + done + " из " + total); }
+      ).then(function(blob){
+        return handle.createWritable().then(function(w){
+          return w.write(blob).then(function(){ return w.close(); });
+        });
+      }).then(function(){
+        phide();
+        stt("ZIP сохранён: " + results.length + " файлов");
+      });
+    }).catch(function(e){
+      phide();
+      if(e && e.name === "AbortError"){ stt("Сохранение отменено"); return; }
+      return downloadAsZipViaAnchor();
+    });
+  }
+  return downloadAsZipViaAnchor();
+}
+
+$("dlAll").addEventListener("click", function(){
+  if(!results.length || busy) return;
+  var btn = $("dlAll");
+  btn.disabled = true;
+  function onDone(){ btn.disabled = false; }
+
+  if(CAN_PICK_DIR){
+    var dirPromise;
+    try{
+      dirPromise = window.showDirectoryPicker({ mode: "readwrite" });
+    } catch(e){
+      downloadAsZip().then(onDone, onDone);
+      return;
+    }
+    dirPromise.then(function(dirHandle){
+      return saveAllToDir(dirHandle);
+    }).then(function(dirName){
+      phide();
+      stt("Сохранено в «" + dirName + "»: " + results.length + " файлов.");
+      onDone();
+    }).catch(function(e){
+      phide();
+      if(e && e.name === "AbortError"){
+        stt("Выбор папки отменён.");
+        onDone();
+      } else {
+        console.warn("showDirectoryPicker failed:", e);
+        stt("Выбор папки не сработал — сохраняю ZIP.");
+        downloadAsZip().then(onDone, onDone);
+      }
+    });
+  } else {
+    downloadAsZip().then(onDone, onDone);
+  }
+});
+
+/* ============================================================
+   12. ПРОЧЕЕ
+   ============================================================ */
+$("again").addEventListener("click",function(){
+  if(busy) return;
+  $("results").classList.remove("show"); results=[]; files=[]; dirty=false;
+  draw(); drawResults(); phide(); stt("Готов"); updateGoBtn();
+});
+
+$("add").addEventListener("click",function(){$("fi").click()});
+$("addDir").addEventListener("click",function(){$("fdir").click()});
+$("fi").addEventListener("change",function(e){add(e.target.files, null);e.target.value=""});
+$("fdir").addEventListener("change",function(e){
+  var arr=[], pmap=[];
+  for(var i=0;i<e.target.files.length;i++){
+    arr.push(e.target.files[i]);
+    pmap.push(e.target.files[i].webkitRelativePath||"");
+  }
+  add(arr, pmap); e.target.value="";
+});
+$("clr").addEventListener("click",function(){
+  if(busy) return;
+  files=[];results=[];dirty=false;
+  draw();drawResults();$("results").classList.remove("show");phide();
+  stt("Очищено"); updateGoBtn();
+});
+$("tt").addEventListener("click",function(){var d=document.documentElement.getAttribute("data-theme")==="dark";theme(d?"light":"dark")});
+
+function readDirRecursive(entry, path, out){
+  return new Promise(function(resolve){
+    if(entry.isFile){
+      entry.file(function(file){ out.push({file:file, path:(path?path+"/":"")+file.name}); resolve(); }, function(){resolve()});
+    } else if(entry.isDirectory){
+      var reader=entry.createReader(); var allEntries=[];
+      function readBatch(){
+        reader.readEntries(function(batch){
+          if(batch.length===0){
+            var chain=Promise.resolve();
+            allEntries.forEach(function(child){
+              chain=chain.then(function(){ return readDirRecursive(child, (path?path+"/":"")+entry.name, out); });
+            });
+            chain.then(resolve);
+          } else { allEntries=allEntries.concat(Array.prototype.slice.call(batch)); readBatch(); }
+        }, function(){resolve()});
+      }
+      readBatch();
+    } else { resolve(); }
+  });
+}
+function handleDrop(e){
+  e.preventDefault(); $("dz").classList.remove("over");
+  if(busy) return;
+  var items=e.dataTransfer.items;
+  if(items && items.length && items[0].webkitGetAsEntry){
+    var entries=[];
+    for(var i=0;i<items.length;i++){ var en=items[i].webkitGetAsEntry(); if(en) entries.push(en); }
+    var collected=[]; var chain=Promise.resolve();
+    entries.forEach(function(en){ chain=chain.then(function(){ return readDirRecursive(en, "", collected); }); });
+    chain.then(function(){ add(collected.map(function(x){return x.file}), collected.map(function(x){return x.path})); });
+  } else { add(e.dataTransfer.files, null); }
+}
+var dz=$("dz");
+["dragenter","dragover"].forEach(function(e){dz.addEventListener(e,function(x){x.preventDefault();dz.classList.add("over")})});
+["dragleave","drop"].forEach(function(e){dz.addEventListener(e,function(x){x.preventDefault();dz.classList.remove("over")})});
+dz.addEventListener("drop", handleDrop);
+dz.addEventListener("click",function(){$("fi").click()});
+
+if(!CAN_PICK_DIR){
+  $("fsHint").style.display = "block";
+  $("dlAll").textContent = CAN_PICK_FILE ? "💾 Сохранить все (ZIP)" : "💾 Скачать все (ZIP)";
+  $("dlAll").title = "Выбор папки напрямую недоступен — результат сохранится в ZIP.";
+} else {
+  $("dlAll").title = "Сохранить файлы в выбранную папку";
+}
+
+draw();stt("Готов к работе");
+})();
+</script>
+</body>
+</html>
