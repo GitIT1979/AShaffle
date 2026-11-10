@@ -42,6 +42,26 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .fi .ex{color:var(--m);font-size:10px;text-transform:uppercase;padding:1px 4px;border-radius:3px;border:1px solid var(--b)}
 .fi .rm{background:none;border:none;color:var(--m);cursor:pointer;font-size:14px;padding:0 4px}
 .fi .rm:hover{color:var(--d)}
+.fi{display:flex;align-items:flex-start}
+.fi .fmain{flex:1;min-width:0}
+.fi .top{display:flex;align-items:center;gap:8px;min-width:0}
+.fi .bot{display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap}
+.ic{background:none;border:1px solid transparent;color:var(--m);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px;line-height:1}
+.ic:hover{background:var(--h);color:var(--t)}
+.ic.rm:hover{color:var(--d)}
+.bd{font-size:10.5px;padding:1px 7px;border-radius:9px;border:1px solid var(--b);color:var(--m);white-space:nowrap}
+.bd.ok{color:var(--gd);background:var(--gl);border-color:transparent}
+.bd.fx{color:#1d4ed8;background:var(--bll);border-color:transparent}
+.bd.nn{color:#b45309;background:#fef3c7;border-color:#fde68a}
+.bd.mn{color:#6d28d9;background:#ede9fe;border-color:transparent}
+[data-theme=dark] .bd.nn{color:#fbbf24;background:#3a2e1a;border-color:#5a4620}
+[data-theme=dark] .bd.mn{color:#c4b5fd;background:#2e2450;border-color:transparent}
+.ed{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--b);border-radius:6px;background:var(--c);color:var(--t);min-width:0}
+.ed.a{flex:0 0 46%}
+.ed.t{flex:1}
+.vt{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.vsum{font-size:12px;color:var(--m)}
+.fl{max-height:340px}
 .pw{display:none;margin-top:12px}
 .pw.show{display:block}
 .pi{display:flex;justify-content:space-between;font-size:12px;color:var(--m);margin-bottom:6px}
@@ -72,9 +92,9 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v8.7</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v8.8</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
-<p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — и скачайте результат в свою папку.</p>
+<p class="hint">Загрузите файлы или папку, нажмите <b>🔎 Проверить названия</b> — программа найдёт правильные исполнителя и трек, — затем <b>🎲 Ashuffle this!</b> и скачайте результат в свою папку.</p>
 
 <div class="dz" id="dz"><span class="big">🎵</span><b>Перетащите файлы или папку сюда</b><div class="sm">или нажмите, чтобы выбрать</div></div>
 <input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff" style="display:none">
@@ -88,6 +108,10 @@ h3{margin:0 0 10px;font-size:15px}
   <button class="btn" id="clr" type="button">🗑 Очистить</button>
 </div>
 <div class="fl" id="list"></div>
+<div class="vt">
+  <button class="btn" id="verify" type="button" title="Найти правильные исполнителя и название для каждого файла">🔎 Проверить названия</button>
+  <span class="vsum" id="vsum"></span>
+</div>
 </div>
 
 <div class="opt">
@@ -96,7 +120,7 @@ h3{margin:0 0 10px;font-size:15px}
 </div>
 <div class="opt">
   <input type="checkbox" id="onlineUse" checked>
-  <label for="onlineUse">Уточнять исполнителя и название трека через Интернет</label>
+  <label for="onlineUse">Проверять названия в интернете перед перемешиванием</label>
 </div>
 
 <button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
@@ -126,6 +150,10 @@ var files=[];
 var results=[];
 var busy=false;
 var dirty=false;
+var nextId=1;
+var editingId=0;
+var verifying=false;
+var cancelVerify=false;
 
 var CAN_PICK_DIR  = typeof window.showDirectoryPicker === "function";
 var CAN_PICK_FILE = typeof window.showSaveFilePicker  === "function";
@@ -288,7 +316,7 @@ function isGoodMatch(query, mbArtist, mbTitle){
 /* ============================================================
    3. MusicBrainz + iTunes (таймауты, retry 503/429)
    ============================================================ */
-var _mbCache = {}, _lastMBRequest = 0;
+var _mbCache = {}, _lastMBRequest = 0, _netErrors = 0;
 
 function _fetchT(url, opts, ms){
   if(typeof AbortController !== "function") return fetch(url, opts);
@@ -302,7 +330,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/8.7 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/8.8 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -328,7 +356,7 @@ function _mbRequest(query){
           _mbCache[key] = data.recordings || [];
           resolve(_mbCache[key]);
         })
-        .catch(function(){ _mbCache[key] = []; resolve([]); });
+        .catch(function(){ _mbCache[key] = []; _netErrors++; resolve([]); });
     }, wait);
   });
 }
@@ -393,7 +421,7 @@ function lookupITunes(term){
           }
           _itCache[key] = out; resolve(out);
         })
-        .catch(function(){ _itCache[key] = null; resolve(null); });
+        .catch(function(){ _itCache[key] = null; _netErrors++; resolve(null); });
     }, wait);
   });
 }
@@ -575,42 +603,95 @@ function pup(d,t,l){var p=t>0?Math.round(d/t*100):0;$("pf").style.width=p+"%";$(
 function phide(){$("pw").classList.remove("show")}
 
 function updateGoBtn(){
-  var btn=$("go");
-  if(files.length>0 && dirty && !busy){
-    btn.style.display="block"; btn.disabled=false; btn.textContent="🎲 Ashuffle this!";
-  } else if(busy){
-    btn.style.display="block"; btn.disabled=true; btn.textContent="⏳ Обработка…";
+  var go=$("go"), vf=$("verify");
+  var has = files.length > 0;
+  if(busy){
+    go.style.display="block"; go.disabled=true; go.textContent="⏳ Обработка…";
+    vf.disabled=true; vf.textContent="🔎 Проверить названия";
+  } else if(verifying){
+    go.style.display="none";
+    vf.disabled=false; vf.textContent="■ Остановить";
   } else {
-    btn.style.display="none";
+    vf.disabled=!has; vf.textContent="🔎 Проверить названия";
+    if(has && (dirty || results.length===0)){
+      go.style.display="block"; go.disabled=false; go.textContent="🎲 Ashuffle this!";
+    } else {
+      go.style.display="none";
+    }
   }
+  var sum=$("vsum"); if(sum) sum.textContent=summaryText();
+}
+
+function needsCheck(f){ return f.info.status==="raw" || f.info.status==="none"; }
+function summaryText(){
+  if(!files.length) return "";
+  var c={raw:0,ok:0,fixed:0,none:0,manual:0};
+  files.forEach(function(f){ var s=f.info.status||"raw"; c[s]=(c[s]||0)+1; });
+  var p=[];
+  if(c.fixed)  p.push("исправлено "+c.fixed);
+  if(c.manual) p.push("вручную "+c.manual);
+  if(c.ok)     p.push("подтверждено "+c.ok);
+  if(c.none)   p.push("не найдено "+c.none);
+  if(c.raw)    p.push("не проверено "+c.raw);
+  return p.join(" · ");
+}
+function statusBadge(info){
+  if(info.status==="ok")     return '<span class="bd ok" title="Подтверждено: '+esc(info.source||"интернет")+'">✓ подтверждено</span>';
+  if(info.status==="fixed")  return '<span class="bd fx" title="Исправлено по данным '+esc(info.source||"интернета")+'">✎ '+esc(info.source||"исправлено")+'</span>';
+  if(info.status==="manual") return '<span class="bd mn" title="Введено вручную">✎ вручную</span>';
+  if(info.status==="none")   return '<span class="bd nn" title="В интернете не найдено — останется разбор имени файла">? не найдено</span>';
+  return "";
+}
+function rowHtml(f,i){
+  var info=f.info, e=ext(f.name).toUpperCase();
+  var idx=String(i+1).padStart(3,"0")+".";
+  var pathInfo=f.path?('<span class="path" title="'+esc(f.path)+'">'+esc(f.path)+'</span>'):"";
+  if(f.id===editingId){
+    return '<div class="fi" data-id="'+f.id+'">'+
+      '<span class="n">'+idx+'</span>'+
+      '<div class="fmain">'+
+        '<div class="top">'+
+          '<input class="ed a" id="ed-artist" value="'+esc(info.artist||"")+'" placeholder="Исполнитель">'+
+          '<input class="ed t" id="ed-title" value="'+esc(info.title||"")+'" placeholder="Название">'+
+        '</div>'+
+        '<div class="bot">'+
+          '<button class="btn sm" data-act="save" data-id="'+f.id+'" type="button">✓ Сохранить</button>'+
+          '<button class="btn sm" data-act="reset" data-id="'+f.id+'" type="button">↺ из имени</button>'+
+          '<button class="btn sm" data-act="cancel" data-id="'+f.id+'" type="button">Отмена</button>'+
+        '</div>'+
+      '</div></div>';
+  }
+  var label=(info.artist?info.artist+" — ":"")+(info.title||"unknown_track");
+  return '<div class="fi" data-id="'+f.id+'">'+
+    '<span class="n">'+idx+'</span>'+
+    '<div class="fmain">'+
+      '<div class="top">'+
+        '<span class="nm" title="'+esc(f.name)+'">'+esc(f.name)+'</span>'+pathInfo+
+        '<span class="ex">'+e+'</span>'+
+        '<button class="ic" data-act="edit" data-id="'+f.id+'" type="button" title="Исправить исполнителя и название">✎</button>'+
+        '<button class="ic rm" data-act="rm" data-id="'+f.id+'" type="button" title="Убрать из списка">✕</button>'+
+      '</div>'+
+      '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+'</div>'+
+    '</div></div>';
 }
 
 function draw(){
-  var L=$("list");L.innerHTML="";
-  files.forEach(function(f,i){
-    var info=parseTrackInfo(f.name);
-    var a=info.artist||"—";
-    var e=ext(f.name).toUpperCase();
-    var pathInfo=f.path?('<span class="path" title="'+esc(f.path)+'">'+esc(f.path)+'</span>'):"";
-    var d=document.createElement("div");d.className="fi";
-    d.innerHTML='<span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(f.name)+'">'+esc(f.name)+'</span>'+pathInfo+'<span class="ex">'+e+'</span><span class="ar">'+esc(a)+'</span><button class="rm" data-i="'+i+'" type="button">✕</button>';
-    L.appendChild(d);
-  });
+  var L=$("list");
+  L.innerHTML = files.map(function(f,i){ return rowHtml(f,i); }).join("");
   $("cnt").textContent=files.length;
-  Array.prototype.forEach.call(L.querySelectorAll(".rm"),function(b){
-    b.addEventListener("click",function(e){
-      if(busy) return;
-      files.splice(+e.target.dataset.i,1);
-      if(files.length===0){
-        results=[];$("results").classList.remove("show");phide();dirty=false;stt("Очищено");
-      } else {
-        results=[];$("results").classList.remove("show");drawResults();dirty=true;
-        stt("Файлов: "+files.length+". Нажмите «Ashuffle this!»");
-      }
-      draw();updateGoBtn();
-    });
-  });
   updateGoBtn();
+}
+function refreshRow(f){
+  var i=files.indexOf(f); if(i<0) return;
+  var el=$("list").querySelector('[data-id="'+f.id+'"]'); if(!el) return;
+  var tmp=document.createElement("div");
+  tmp.innerHTML=rowHtml(f,i).trim();
+  if(tmp.firstChild) el.parentNode.replaceChild(tmp.firstChild, el);
+}
+function resetResults(){
+  results=[];
+  $("results").classList.remove("show");
+  drawResults();
 }
 
 function drawResults(){
@@ -633,128 +714,168 @@ function drawResults(){
 }
 
 /* ============================================================
-   8. ASHUFFLE THIS!
+   8. ПРОВЕРКА НАЗВАНИЙ И ASHUFFLE
    ============================================================ */
-function runAshuffle(){
-  if(!files.length || busy) return;
-  busy=true; updateGoBtn();
-  $("results").classList.remove("show"); phide();
-  var useOnline = $("onlineUse").checked;
-  var useNumbered = $("numbered").checked;
-
-  var parsed = files.map(function(f){
-    return { source: f, info: parseTrackInfo(f.name) };
-  });
-
-  function phaseOnline(){
-    if(!useOnline) return Promise.resolve();
-    pshow("Уточнение через интернет…");
-    var idx = 0;
-
-    function doOne(p){
-      var a = p.info.artist, t = p.info.title, raw = p.info._raw || "";
-      var fullTerm = (raw || ((a ? a + " " : "") + t))
-        .replace(/[-_]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      return lookupMusicBrainzByRecording(fullTerm).then(function(recs){
-        var found = pickMusicBrainzResult(recs, fullTerm);
-        if(found) return found;
-        if(a && t && t !== "unknown_track"){
-          return lookupMusicBrainzByArtistTitle(a, t).then(function(recs2){
-            var found2 = pickMusicBrainzResult(recs2, a + " " + t);
-            if(found2) return found2;
-            return lookupITunes(fullTerm);
-          });
-        }
-        return lookupITunes(fullTerm);
+function lookupTrack(info){
+  var a=info.artist, t=info.title, raw=info._raw||"";
+  var term=(raw || ((a?a+" ":"")+t)).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
+  if(!term) return Promise.resolve(null);
+  return lookupMusicBrainzByRecording(term).then(function(recs){
+    var found=pickMusicBrainzResult(recs, term);
+    if(found) return found;
+    if(a && t && t!=="unknown_track"){
+      return lookupMusicBrainzByArtistTitle(a, t).then(function(recs2){
+        var found2=pickMusicBrainzResult(recs2, a+" "+t);
+        if(found2) return found2;
+        return lookupITunes(term);
       });
     }
+    return lookupITunes(term);
+  }).catch(function(){ return null; });
+}
 
-    function nextOne(){
-      if(idx >= parsed.length) return Promise.resolve();
-      var p = parsed[idx];
-      return doOne(p).then(function(found){
-        if(found){
-          p.info.artist = found.artist || p.info.artist;
-          p.info.title  = found.title  || p.info.title;
-          p.info.source = found.source;
-        }
-        idx++;
-        pup(idx, parsed.length, "Интернет: " + idx + " / " + parsed.length);
-        return nextOne();
-      });
-    }
-    return nextOne();
-  }
-
-  phaseOnline().then(function(){
-    var groups = {};
-    parsed.forEach(function(p){
-      var key = norm(p.info.artist || "unknown_artist");
-      (groups[key] = groups[key] || []).push(p);
+/* Проходит по списку по одному файлу и отмечает статус каждого названия. */
+function verifyQueue(todo){
+  pshow("Проверка названий через интернет…");
+  var st={changed:0, confirmed:0, missing:0, cancelled:false, stopped:false};
+  var i=0, netStreak=0;
+  function step(){
+    if(cancelVerify){ st.cancelled=true; return Promise.resolve(st); }
+    if(i>=todo.length) return Promise.resolve(st);
+    var f=todo[i], netAt=_netErrors;
+    return lookupTrack(f.info).then(function(found){
+      if(found){
+        var same = norm(found.artist)===norm(f.info.artist) && norm(found.title)===norm(f.info.title);
+        f.info.artist = found.artist || f.info.artist;
+        f.info.title  = found.title  || f.info.title;
+        f.info.source = found.source || "";
+        f.info.status = same ? "ok" : "fixed";
+        if(same) st.confirmed++; else st.changed++;
+      } else {
+        f.info.status="none";
+        st.missing++;
+      }
+      i++;
+      refreshRow(f);
+      if(i%5===0) updateGoBtn();
+      pup(i, todo.length, "Проверка: "+i+" / "+todo.length+" — "+f.name.slice(0,46));
+      netStreak = (!found && _netErrors>netAt) ? netStreak+1 : 0;
+      if(netStreak>=3 && i<todo.length){ st.stopped=true; return st; }
+      return step();
     });
-    var ordered = inter(groups);
+  }
+  return step().then(function(r){ phide(); return r; });
+}
 
-    phide(); pshow("Обработка файлов…");
-    results = [];
-    var j = 0, failed = 0, usedNames = {};
-    function uniqueName(name){
-      if(!Object.prototype.hasOwnProperty.call(usedNames, name)){
-        usedNames[name] = 1; return name;
-      }
-      var m = name.match(/^(.*?)(\.[^.]+)?$/), base = m[1], extPart2 = m[2] || "";
-      var k = 2, cand;
-      do{ cand = base + " (" + k + ")" + extPart2; k++; }
-      while(Object.prototype.hasOwnProperty.call(usedNames, cand));
-      usedNames[cand] = 1;
-      return cand;
-    }
-    function nextFile(){
-      if(j >= ordered.length){
-        phide(); drawResults();
-        $("results").classList.add("show");
-        stt("Готово: "+results.length+" файлов." + (failed ? " С ошибкой чтения: "+failed+"." : ""));
-        busy=false; dirty=false; updateGoBtn();
-        return;
-      }
-      var p = ordered[j], src = p.source, num = j + 1;
-      var isMp3 = ext(src.name) === "mp3";
-      var extPart = (src.name.match(/\.[^.]+$/) || [""])[0];
-      var finalName = uniqueName(makeName(p.info, extPart, useNumbered ? num : null));
-
-      console.log("Rename: " + src.name + " → " + finalName);
-
-      makeRenamedFile(src.file, finalName, num, p.info.artist, p.info.title)
-        .catch(function(err){
-          console.error("Rename failed:", src.name, err);
-          failed++;
-          try { return new File([src.file], finalName, { type: src.file.type || "audio/mpeg" }); }
-          catch(e){ return src.file; }
-        })
-        .then(function(blob){
-          results.push({
-            file: blob,
-            name: finalName,
-            artist: p.info.artist || "unknown_artist",
-            source: p.info.source || "",
-            size: blob.size,
-            isMp3: isMp3,
-            trackNum: num
-          });
-          pup(j+1, ordered.length);
-          j++; setTimeout(nextFile, 0);
-        });
-    }
-    nextFile();
-  }).catch(function(err){
-    console.error(err);
-    busy=false; updateGoBtn(); phide();
-    stt("Ошибка при обработке: " + err.message);
+function verifyAll(){
+  if(!files.length || busy || verifying) return Promise.resolve();
+  var todo=files.filter(needsCheck);
+  if(!todo.length){ stt("Все названия уже проверены. Правьте вручную через ✎."); return Promise.resolve(); }
+  verifying=true; cancelVerify=false; dirty=true;
+  resetResults(); updateGoBtn();
+  return verifyQueue(todo).then(function(st){
+    verifying=false; draw();
+    if(st.cancelled)    stt("Проверка остановлена: "+(st.changed+st.confirmed+st.missing)+" из "+todo.length+".");
+    else if(st.stopped) stt("Сервисы не ответили — проверка прервана на "+(st.changed+st.confirmed+st.missing)+" из "+todo.length+". Проверьте соединение.");
+    else                stt("Проверка завершена: исправлено "+st.changed+", подтверждено "+st.confirmed+", не найдено "+st.missing+".");
+    updateGoBtn();
   });
 }
+
+function runAshuffle(){
+  if(!files.length || busy || verifying) return;
+  busy=true; updateGoBtn(); phide();
+  resetResults();
+  var useOnline=$("onlineUse").checked;
+  var useNumbered=$("numbered").checked;
+  var todo = useOnline ? files.filter(needsCheck) : [];
+  var prep;
+  if(todo.length){
+    verifying=true; cancelVerify=false; updateGoBtn();
+    prep=verifyQueue(todo).then(function(st){ verifying=false; return st; });
+  } else {
+    prep=Promise.resolve(null);
+  }
+  prep.then(function(st){
+    if(st && (st.cancelled || st.stopped)){
+      busy=false; draw();
+      stt(st.cancelled ? "Перемешивание отменено на проверке названий." : "Сервисы не ответили — перемешивание отменено.");
+      return;
+    }
+    startShuffle(useNumbered);
+  }).catch(function(err){
+    console.error(err);
+    busy=false; verifying=false; phide(); updateGoBtn();
+    stt("Ошибка при обработке: "+(err&&err.message?err.message:err));
+  });
+}
+
+function startShuffle(useNumbered){
+  var groups={};
+  files.forEach(function(f){
+    var key=norm(f.info.artist || "unknown_artist");
+    (groups[key]=groups[key]||[]).push(f);
+  });
+  var ordered=inter(groups);
+
+  phide(); pshow("Обработка файлов…");
+  results=[];
+  var j=0, failed=0, usedNames={};
+  function uniqueName(name){
+    if(!Object.prototype.hasOwnProperty.call(usedNames, name)){
+      usedNames[name]=1; return name;
+    }
+    var m=name.match(/^(.*?)(\.[^.]+)?$/), base=m[1], extPart2=m[2]||"";
+    var k=2, cand;
+    do{ cand=base+" ("+k+")"+extPart2; k++; }
+    while(Object.prototype.hasOwnProperty.call(usedNames, cand));
+    usedNames[cand]=1;
+    return cand;
+  }
+  function nextFile(){
+    if(j>=ordered.length){
+      phide(); drawResults();
+      $("results").classList.add("show");
+      stt("Готово: "+results.length+" файлов."+(failed?" С ошибкой чтения: "+failed+".":""));
+      busy=false; dirty=false; updateGoBtn();
+      return;
+    }
+    var f=ordered[j], num=j+1;
+    var isMp3=ext(f.name)==="mp3";
+    var extPart=(f.name.match(/\.[^.]+$/) || [""])[0];
+    var finalName=uniqueName(makeName(f.info, extPart, useNumbered ? num : null));
+
+    console.log("Rename: "+f.name+" → "+finalName);
+
+    makeRenamedFile(f.file, finalName, num, f.info.artist, f.info.title)
+      .catch(function(err){
+        console.error("Rename failed:", f.name, err);
+        failed++;
+        try { return new File([f.file], finalName, { type: f.file.type || "audio/mpeg" }); }
+        catch(e){ return f.file; }
+      })
+      .then(function(blob){
+        results.push({
+          file: blob,
+          name: finalName,
+          artist: f.info.artist || "unknown_artist",
+          source: f.info.source || "",
+          size: blob.size,
+          isMp3: isMp3,
+          trackNum: num
+        });
+        pup(j+1, ordered.length);
+        j++; setTimeout(nextFile, 0);
+      });
+  }
+  nextFile();
+}
+
 $("go").addEventListener("click", runAshuffle);
+$("verify").addEventListener("click", function(){
+  if(verifying){ cancelVerify=true; stt("Останавливаю после текущего файла…"); return; }
+  verifyAll();
+});
 
 /* ============================================================
    9. ДОБАВЛЕНИЕ
@@ -763,7 +884,7 @@ function fileKey(name, size, path){
   return name + "|" + (size || 0) + "|" + (path || "");
 }
 function add(input, pathMap){
-  if(busy) return;
+  if(busy || verifying) return;
   var added=0, dups=0, notAudio=0, ex={};
   files.forEach(function(f){ ex[fileKey(f.name, f.file.size, f.path)]=1; });
   for(var i=0;i<input.length;i++){
@@ -773,7 +894,15 @@ function add(input, pathMap){
     var k=fileKey(f.name, f.size, p);
     if(ex[k]){ dups++; continue; }
     ex[k]=1;
-    files.push({name:f.name, file:f, path:p});
+    var parsed=parseTrackInfo(f.name);
+    files.push({
+      id: nextId++,
+      name: f.name,
+      file: f,
+      path: p,
+      parsed: parsed,
+      info: { artist: parsed.artist, title: parsed.title, _raw: parsed._raw, status: "raw", source: "" }
+    });
     added++;
   }
   var skipped=[];
@@ -781,6 +910,7 @@ function add(input, pathMap){
   if(notAudio) skipped.push("не аудио: "+notAudio);
   var tail = skipped.length ? " Пропущено — "+skipped.join(", ")+"." : "";
   if(added===0){ draw(); stt("Ничего не добавлено."+tail); return; }
+  editingId=0;
   results=[];$("results").classList.remove("show");drawResults();draw();
   dirty=true; updateGoBtn();
   stt("Добавлено: "+added+". Всего: "+files.length+"."+tail+" Нажмите «Ashuffle this!»");
@@ -1014,13 +1144,50 @@ $("dlAll").addEventListener("click", function(){
    12. ПРОЧЕЕ
    ============================================================ */
 $("again").addEventListener("click",function(){
-  if(busy) return;
-  $("results").classList.remove("show"); results=[]; files=[]; dirty=false;
+  if(busy || verifying) return;
+  $("results").classList.remove("show"); results=[]; files=[]; dirty=false; editingId=0;
   draw(); drawResults(); phide(); stt("Готов"); updateGoBtn();
 });
 
-$("add").addEventListener("click",function(){$("fi").click()});
-$("addDir").addEventListener("click",function(){$("fdir").click()});
+/* Кнопки в списке файлов: править, сохранить, сбросить, убрать */
+$("list").addEventListener("click", function(e){
+  var b = e.target.closest ? e.target.closest("[data-act]") : null;
+  if(!b || busy || verifying) return;
+  var id=+b.dataset.id, act=b.dataset.act;
+  var idx=files.findIndex(function(x){ return x.id===id; });
+  if(idx<0) return;
+  if(act==="edit"){ editingId=id; draw(); var f0=$("ed-artist"); if(f0) f0.focus(); return; }
+  if(act==="cancel"){ editingId=0; draw(); return; }
+  if(act==="reset"){
+    var p0=files[idx].parsed;
+    files[idx].info={ artist:p0.artist, title:p0.title, _raw:p0._raw, status:"raw", source:"" };
+    editingId=0; dirty=true; resetResults(); draw();
+    stt("Возвращено имя из файла: "+files[idx].name);
+    return;
+  }
+  if(act==="save"){
+    var ae=$("ed-artist"), te=$("ed-title");
+    var aVal=ae?ae.value.trim():"", tVal=te?te.value.trim():"";
+    if(!tVal) tVal="unknown_track";
+    files[idx].info.artist=aVal;
+    files[idx].info.title=tVal;
+    files[idx].info.status="manual";
+    files[idx].info.source="";
+    editingId=0; dirty=true; resetResults(); draw();
+    stt("Название исправлено вручную.");
+    return;
+  }
+  if(act==="rm"){
+    if(editingId===id) editingId=0;
+    files.splice(idx,1);
+    resetResults();
+    if(!files.length){ dirty=false; stt("Очищено"); }
+    else { dirty=true; stt("Файлов: "+files.length+"."); }
+    draw();
+  }
+});
+
+$("add").addEventListener("click",function(){$("fi").click()});$("addDir").addEventListener("click",function(){$("fdir").click()});
 $("fi").addEventListener("change",function(e){add(e.target.files, null);e.target.value=""});
 $("fdir").addEventListener("change",function(e){
   var arr=[], pmap=[];
@@ -1031,8 +1198,8 @@ $("fdir").addEventListener("change",function(e){
   add(arr, pmap); e.target.value="";
 });
 $("clr").addEventListener("click",function(){
-  if(busy) return;
-  files=[];results=[];dirty=false;
+  if(busy || verifying) return;
+  files=[];results=[];dirty=false;editingId=0;
   draw();drawResults();$("results").classList.remove("show");phide();
   stt("Очищено"); updateGoBtn();
 });

@@ -28,7 +28,8 @@ code = code.replace(/\}\)\(\);\s*$/,
   "globalThis.__api={parseTrackInfo:parseTrackInfo,makeName:makeName," +
   "stripTrackPrefix:stripTrackPrefix,safeNamePart:safeNamePart,trySplit:trySplit," +
   "buildZipBlob:buildZipBlob,makeRenamedFile:makeRenamedFile," +
-  "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext};\n})();");
+  "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext," +
+  "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText};\n})();");
 
 function makeEl() {
   return {
@@ -96,6 +97,20 @@ eq(api.makeName({ artist: "A", title: "y".repeat(200) }, ".mp3", 3).length <= 6 
    true, "длина названия ограничена");
 eq(api.makeName({ artist: "", title: "Track" }, ".flac", null),
    "unknown_artist - Track.flac", "без номера и исполнителя");
+
+/* ---------- список файлов ---------- */
+const mkFile = (name) => new File([new Uint8Array([1, 2, 3])], name);
+api.add([mkFile("A - B.mp3")], ["x/A - B.mp3"]);
+eq(api.entries().length, 1, "add: файл добавлен");
+eq(api.entries()[0].info.status, "raw", "add: статус raw");
+eq(api.entries()[0].info.artist, "A", "add: исполнитель разобран");
+api.add([mkFile("A - B.mp3")], ["x/A - B.mp3"]);
+eq(api.entries().length, 1, "add: точный дубликат отклонён");
+api.add([mkFile("A - B.mp3")], ["y/A - B.mp3"]);
+eq(api.entries().length, 2, "add: одноимённый файл из другой папки добавлен");
+api.add([mkFile("readme.txt")], ["x/readme.txt"]);
+eq(api.entries().length, 2, "add: не аудио отклонено");
+eq(api.needsCheck(api.entries()[0]), true, "needsCheck для raw");
 
 /* ---------- ZIP ---------- */
 (async function () {
