@@ -34,7 +34,8 @@ code = code.replace(/\}\)\(\);\s*$/,
   "readApeTags:readApeTags,readWmaTags:readWmaTags," +
   "untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
-  "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText};\n})();");
+  "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
+  "rowHtml:rowHtml};\n})();");
 
 function makeEl() {
   return {
@@ -117,6 +118,10 @@ eq(api.entries().length, 2, "add: одноимённый файл из друг�
 api.add([mkFile("readme.txt")], ["x/readme.txt"]);
 eq(api.entries().length, 2, "add: не аудио отклонено");
 eq(api.needsCheck(api.entries()[0]), true, "needsCheck для raw");
+
+const row = api.rowHtml(api.entries()[0], 0);
+eq(row.indexOf('class="path"') < 0, true, "путь убран из верхней строки");
+ok(row.indexOf('class="dir"') >= 0, "при разных папках показывается метка папки");
 
 /* ---------- транслитерация и длительность ---------- */
 eq(api.translit("Дельфин"), "delfin", "транслит: Дельфин");

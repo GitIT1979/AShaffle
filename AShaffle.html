@@ -56,6 +56,7 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .bd.mn{color:#6d28d9;background:#ede9fe;border-color:transparent}
 .bd.tg{color:#0369a1;background:#e0f2fe;border-color:transparent}
 .dur{font-size:11px;color:var(--m);font-family:Consolas,monospace;margin-left:auto}
+.dir{font-size:11px;color:var(--m);font-family:Consolas,monospace;padding:0 6px;border-left:1px solid var(--b);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 [data-theme=dark] .bd.tg{color:#7dd3fc;background:#0c2a3a;border-color:transparent}
 [data-theme=dark] .bd.nn{color:#fbbf24;background:#3a2e1a;border-color:#5a4620}
 [data-theme=dark] .bd.mn{color:#c4b5fd;background:#2e2450;border-color:transparent}
@@ -96,7 +97,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.4</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.5</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -155,6 +156,7 @@ var nextId=1;
 var editingId=0;
 var verifying=false;
 var cancelVerify=false;
+var _multiDir=false;
 
 var CAN_PICK_DIR  = typeof window.showDirectoryPicker === "function";
 var CAN_PICK_FILE = typeof window.showSaveFilePicker  === "function";
@@ -408,7 +410,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.4 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.5 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -1067,10 +1069,14 @@ function statusBadge(info){
   if(info.status==="none")   return '<span class="bd nn" title="В интернете не найдено — останется разбор имени файла">? не найдено</span>';
   return "";
 }
+function folderOf(p){
+  if(!p) return "";
+  var parts = String(p).split("/");
+  return parts.length > 1 ? parts[parts.length - 2] : "";
+}
 function rowHtml(f,i){
   var info=f.info, e=ext(f.name).toUpperCase();
   var idx=String(i+1).padStart(3,"0")+".";
-  var pathInfo=f.path?('<span class="path" title="'+esc(f.path)+'">'+esc(f.path)+'</span>'):"";
   if(f.id===editingId){
     return '<div class="fi" data-id="'+f.id+'">'+
       '<span class="n">'+idx+'</span>'+
@@ -1087,17 +1093,19 @@ function rowHtml(f,i){
       '</div></div>';
   }
   var label=(info.artist?info.artist+" — ":"")+(info.title||"unknown_track");
+  var dir = _multiDir ? folderOf(f.path) : "";
   return '<div class="fi" data-id="'+f.id+'">'+
     '<span class="n">'+idx+'</span>'+
     '<div class="fmain">'+
       '<div class="top">'+
-        '<span class="nm" title="'+esc(f.name)+'">'+esc(f.name)+'</span>'+pathInfo+
+        '<span class="nm" title="'+esc(f.path || f.name)+'">'+esc(f.name)+'</span>'+
         '<span class="ex">'+e+'</span>'+
         '<button class="ic" data-act="edit" data-id="'+f.id+'" type="button" title="Исправить исполнителя и название">✎</button>'+
         '<button class="ic rm" data-act="rm" data-id="'+f.id+'" type="button" title="Убрать из списка">✕</button>'+
       '</div>'+
       '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
         (info.fromTags && info.status==="raw" ? '<span class="bd tg" title="Исполнитель и название взяты из тега файла">тег</span>' : '')+
+        (dir ? '<span class="dir" title="'+esc(f.path)+'">'+esc(dir)+'</span>' : '')+
         (f.duration ? '<span class="dur">'+fmtDur(f.duration)+'</span>' : '')+
       '</div>'+
     '</div></div>';
@@ -1105,6 +1113,9 @@ function rowHtml(f,i){
 
 function draw(){
   var L=$("list");
+  var dirs={};
+  files.forEach(function(f){ var d=folderOf(f.path); if(d) dirs[d]=1; });
+  _multiDir = Object.keys(dirs).length > 1;
   L.innerHTML = files.map(function(f,i){ return rowHtml(f,i); }).join("");
   $("cnt").textContent=files.length;
   updateGoBtn();
