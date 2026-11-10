@@ -35,7 +35,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "matchScore:matchScore,cleanJunk:cleanJunk,dropVariants:dropVariants," +
-  "foldMixed:foldMixed,collapseDoubles:collapseDoubles," +
+  "foldMixed:foldMixed,collapseDoubles:collapseDoubles,stripSiteJunk:stripSiteJunk," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -164,6 +164,9 @@ eq(api.foldMixed("Bетер"), "ветер", "латинская B внутри 
 eq(api.foldMixed("Mоя"), "моя", "латинская M внутри кириллицы");
 eq(api.foldMixed("Rick Astley"), "Rick Astley", "чистую латиницу не трогаем");
 eq(api.collapseDoubles("Мишелль"), "Мишель", "лишняя удвоенная буква");
+eq(api.stripSiteJunk("Бесприданница (Sefon.Pro)"), "Бесприданница", "сайт в скобках вырезан");
+eq(api.stripSiteJunk("Song [zaycev.net]"), "Song", "сайт в квадратных скобках вырезан");
+eq(api.stripSiteJunk("Song (Live)"), "Song (Live)", "обычные скобки не трогаем");
 eq(api.isGoodMatchFlex("Bетер меняет направление", "Ветер меняет направление", ""), true, "матч при смешанной письменности");
 
 /* ---------- ZIP ---------- */

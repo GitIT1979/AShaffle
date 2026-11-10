@@ -87,13 +87,21 @@ h3{margin:0 0 10px;font-size:15px}
 .big-btn.mt{background:linear-gradient(135deg,#2563eb,#1d4ed8);box-shadow:0 6px 20px rgba(37,99,235,.35)}
 .big-btn.mt:hover{box-shadow:0 8px 25px rgba(37,99,235,.5)}
 .big-btn + .big-btn{margin-top:10px}
+.actions{display:flex;align-items:stretch;gap:10px}
+.actions .big-btn{flex:1;margin:0}
+.btn.ok{flex:0 0 auto;min-width:64px;font-weight:700;font-size:16px}
+@keyframes asFadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes asFadeOut{from{opacity:1}to{opacity:0;transform:translateY(-8px)}}
+.anim-in{animation:asFadeIn .38s ease both}
+.anim-out{animation:asFadeOut .22s ease both}
+@media (prefers-reduced-motion: reduce){.anim-in,.anim-out{animation:none}}
 .warn{display:none;color:#b45309;font-size:12px;margin-bottom:10px;padding:8px 10px;background:#fef3c7;border-radius:6px;border:1px solid #fde68a;line-height:1.5}
 [data-theme=dark] .warn{color:#fbbf24;background:#3a2e1a;border-color:#5a4620}
 </style>
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v10.2</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.0</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -101,7 +109,7 @@ h3{margin:0 0 10px;font-size:15px}
 <input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff" style="display:none">
 <input type="file" id="fdir" webkitdirectory directory multiple style="display:none">
 
-<div class="card">
+<div class="card" id="filesCard">
 <h3>Файлы <span class="bg" id="cnt">0</span></h3>
 <div class="row" style="margin-bottom:10px">
   <button class="btn" id="add" type="button">➕ Добавить файлы</button>
@@ -111,20 +119,21 @@ h3{margin:0 0 10px;font-size:15px}
 <div class="fl" id="list"></div>
 </div>
 
-<button class="big-btn mt" id="makeTrue" type="button">🪄 Make this true!</button>
-<button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
+<div class="actions" id="actions">
+  <button class="big-btn mt" id="makeTrue" type="button">🪄 Make this true!</button>
+  <button class="btn ok" id="confirm" type="button">OK</button>
+</div>
 
 <div class="pw" id="pw"><div class="pi"><span id="pl">Обработка…</span><span id="pp">0%</span></div><div class="pb"><div class="pf" id="pf"></div></div></div>
 
 <div class="card results" id="results">
 <h3>Готово! <span class="bg" id="rcnt">0</span></h3>
 <div class="warn" id="fsHint">⚠️ Выбор папки доступен только при открытии через HTTPS или <code>localhost</code>. Сейчас все файлы сохранятся одним ZIP-архивом.</div>
-<div class="row" style="margin-bottom:10px">
-  <button class="btn bl" id="dlAll" type="button" title="Сохранить результат">💾 Скачать все в папку</button>
-  <span class="sp"></span>
-  <button class="btn" id="again" type="button">🔁 Заново</button>
-</div>
 <div class="res-list" id="resList"></div>
+<div class="row" style="margin-top:10px">
+  <button class="btn bl" id="dlAll" type="button" title="Сохранить результат">💾 Скачать все в папку</button>
+</div>
+<button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
 </div>
 
 </div>
@@ -144,6 +153,7 @@ var verifying=false;
 var cancelVerify=false;
 var _multiDir=false;
 var madeTrue=false;
+var confirmed=false;
 
 var CAN_PICK_DIR  = typeof window.showDirectoryPicker === "function";
 var CAN_PICK_FILE = typeof window.showSaveFilePicker  === "function";
@@ -190,11 +200,18 @@ function _noiseInner(inner){
   var words = t.split(" ");
   return words.every(function(w){ return _NOISE[w] || /^\d{4}$/.test(w); });
 }
+/* Мусорные водяные знаки сайтов в названии: «(Sefon.Pro)», «[zaycev.net]» */
+var _SITE_TAIL = "ru|pro|net|com|org|info|cc|me|io|tv|su|biz|fm|co|site|online|top";
+function stripSiteJunk(s){
+  var re1 = new RegExp("\\s*\\(\\s*[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9-]+)*\\.(" + _SITE_TAIL + ")\\s*\\)", "gi");
+  var re2 = new RegExp("\\s*\\[\\s*[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9-]+)*\\.(" + _SITE_TAIL + ")\\s*\\]", "gi");
+  return String(s||"").replace(re1, "").replace(re2, "").replace(/\s{2,}/g, " ").trim();
+}
 function cleanJunk(s){
   var out = String(s).replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
     return _noiseInner(inner) ? "" : m;
   });
-  return out
+  out = out
     .replace(/\s+[-–—]\s*(topic|official\s*(video|audio|music\s*video)|lyrics?|hd|hq|remaster(ed)?|single|album)\s*$/gi, "")
     .replace(/\s*\([a-z0-9-]+\.[a-z]{2,}\)/gi, "")
     .replace(/\s+official\s+music\s+video\b/gi, "")
@@ -202,9 +219,8 @@ function cleanJunk(s){
     .replace(/\s+official\s+video\b/gi, "")
     .replace(/\s+official\s+audio\b/gi, "")
     .replace(/\s+lyric\s+video\b/gi, "")
-    .replace(/\s+uuid[-\s][\w-]+/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\s+uuid[-\s][\w-]+/gi, "");
+  return stripSiteJunk(out.replace(/\s+/g, " ").trim());
 }
 /* Для поиска убираем и варианты записи: ищем песню, а версию выберет длительность */
 var _VARIANTS = { live:1, remix:1, acoustic:1, instrumental:1, extended:1, radio:1, edit:1, demo:1, cover:1, version:1 };
@@ -1117,8 +1133,8 @@ function inspectEntry(e){
       if(!e.duration && tags.length) e.duration = tags.length / 1000;
       if(e.info.status === "raw" && e.id !== editingId){
         var changed = false;
-        if(usefulTag(tags.artist) && norm(tags.artist) !== norm(e.info.artist)){ e.info.artist = tags.artist.trim(); changed = true; }
-        if(usefulTag(tags.title)  && norm(tags.title)  !== norm(e.info.title)){  e.info.title  = tags.title.trim();  changed = true; }
+        if(usefulTag(tags.artist) && norm(tags.artist) !== norm(e.info.artist)){ e.info.artist = stripSiteJunk(tags.artist.trim()); changed = true; }
+        if(usefulTag(tags.title)  && norm(tags.title)  !== norm(e.info.title)){  e.info.title  = stripSiteJunk(tags.title.trim());  changed = true; }
         if(changed){ e.info.fromTags = true; e.info._raw = ""; }
       }
     }
@@ -1135,19 +1151,27 @@ function pup(d,t,l){var p=t>0?Math.round(d/t*100):0;$("pf").style.width=p+"%";$(
 function phide(){$("pw").classList.remove("show")}
 
 function updateGoBtn(){
-  var mt=$("makeTrue"), go=$("go");
+  var mt=$("makeTrue"), ok=$("confirm"), go=$("go");
+  var fc=$("filesCard"), acts=$("actions"), rc=$("results");
   var has = files.length > 0;
+  if(fc){ fc.style.display = confirmed ? "none" : "block"; fc.classList.remove("anim-out"); }
+  if(acts){ acts.style.display = confirmed ? "none" : "flex"; acts.classList.remove("anim-out"); }
+  if(rc){ if(confirmed && results.length) rc.classList.add("show"); else rc.classList.remove("show"); }
+
   if(busy){
-    mt.style.display="none";
-    go.style.display="block"; go.disabled=true; go.textContent="⏳ Обработка…";
+    mt.style.display="none"; if(ok) ok.style.display="none";
+    go.style.display = confirmed ? "block" : "none"; go.disabled=true; go.textContent="⏳ Обработка…";
   } else if(verifying){
-    go.style.display="none";
+    go.style.display="none"; if(ok) ok.style.display="none";
     mt.style.display=has?"block":"none"; mt.disabled=false; mt.textContent="■ Остановить";
+  } else if(confirmed){
+    mt.style.display="none"; if(ok) ok.style.display="none";
+    go.style.display="block"; go.disabled=false; go.textContent="🎲 Ashuffle this!";
   } else {
-    mt.style.display=has?"block":"none"; mt.disabled=false; mt.textContent="🪄 Make this true!";
-    go.style.display=(has && madeTrue)?"block":"none"; go.disabled=false; go.textContent="🎲 Ashuffle this!";
+    go.style.display="none";
+    mt.style.display=has?"block":"none"; mt.disabled=!has; mt.textContent="🪄 Make this true!";
+    if(ok) ok.style.display=(has && madeTrue)?"block":"none";
   }
-  var sum=$("vsum"); if(sum) sum.textContent=summaryText();
 }
 
 function needsCheck(f){ return f.info.status==="raw"; }
@@ -1370,11 +1394,12 @@ function verifyQueue(todo){
     }).then(function(found){
       if(found){
         /* Если имя отличается только регистром, оставляем написание из файла */
+        var foundTitle = stripSiteJunk(found.title || "");
         var sameArtist = norm(found.artist) === norm(f.info.artist);
-        var sameTitle  = norm(found.title)  === norm(f.info.title);
+        var sameTitle  = norm(foundTitle)  === norm(f.info.title);
         var same = sameArtist && sameTitle;
         f.info.artist = (sameArtist && f.info.artist) ? f.info.artist : (found.artist || f.info.artist);
-        f.info.title  = (sameTitle  && f.info.title)  ? f.info.title  : (found.title  || f.info.title);
+        f.info.title  = (sameTitle  && f.info.title)  ? f.info.title  : (foundTitle  || f.info.title);
         f.info.source = found.source || "";
         f.info.score  = found.score || 0;
         f.info.status = same ? "ok" : "fixed";
@@ -1463,7 +1488,6 @@ function startRename(){
   function nextFile(){
     if(j>=files.length){
       phide(); drawResults();
-      $("results").classList.add("show");
       madeTrue=true;
       stt("Готово: "+results.length+" файлов в прежнем порядке."+(failed?" С ошибкой чтения: "+failed+".":""));
       busy=false; updateGoBtn();
@@ -1498,6 +1522,25 @@ function startRename(){
       });
   }
   nextFile();
+}
+
+/* Переход к списку результатов: рабочий список и кнопки скрываются с эффектом */
+function confirmResults(){
+  if(!madeTrue || confirmed || busy || verifying || !results.length) return;
+  var fc=$("filesCard"), acts=$("actions");
+  if(fc) fc.classList.add("anim-out");
+  if(acts) acts.classList.add("anim-out");
+  setTimeout(function(){
+    confirmed=true;
+    if(fc) fc.classList.remove("anim-out");
+    if(acts) acts.classList.remove("anim-out");
+    updateGoBtn();
+    var rc=$("results");
+    if(rc){
+      rc.classList.add("anim-in");
+      setTimeout(function(){ rc.classList.remove("anim-in"); }, 420);
+    }
+  }, 220);
 }
 
 function runAshuffle(){
@@ -1592,6 +1635,7 @@ function startShuffle(useNumbered){
 }
 
 $("go").addEventListener("click", runAshuffle);
+$("confirm").addEventListener("click", confirmResults);
 $("makeTrue").addEventListener("click", function(){
   if(verifying){ cancelVerify=true; stt("Останавливаю после текущего файла…"); return; }
   makeTrue();
@@ -1634,7 +1678,7 @@ function add(input, pathMap){
   var tail = skipped.length ? " Пропущено — "+skipped.join(", ")+"." : "";
   if(added===0){ draw(); stt("Ничего не добавлено."+tail); return; }
   editingId=0;
-  madeTrue=false;
+  madeTrue=false; confirmed=false;
   results=[];$("results").classList.remove("show");drawResults();draw();
   dirty=true; updateGoBtn();
   stt("Добавлено: "+added+". Всего: "+files.length+"."+tail+" Нажмите «Ashuffle this!»");
@@ -1867,11 +1911,6 @@ $("dlAll").addEventListener("click", function(){
 /* ============================================================
    12. ПРОЧЕЕ
    ============================================================ */
-$("again").addEventListener("click",function(){
-  if(busy || verifying) return;
-  $("results").classList.remove("show"); results=[]; files=[]; dirty=false; editingId=0; madeTrue=false;
-  draw(); drawResults(); phide(); stt("Готов"); updateGoBtn();
-});
 
 /* Кнопки в списке файлов: править, сохранить, сбросить, убрать */
 $("list").addEventListener("click", function(e){
@@ -1885,7 +1924,7 @@ $("list").addEventListener("click", function(e){
   if(act==="reset"){
     var p0=files[idx].parsed;
     files[idx].info={ artist:p0.artist, title:p0.title, _raw:p0._raw, status:"raw", source:"" };
-    madeTrue=false;
+    madeTrue=false; confirmed=false;
     editingId=0; dirty=true; resetResults(); draw();
     stt("Возвращено имя из файла: "+files[idx].name);
     return;
@@ -1898,14 +1937,14 @@ $("list").addEventListener("click", function(e){
     files[idx].info.title=tVal;
     files[idx].info.status="manual";
     files[idx].info.source="";
-    madeTrue=false;
+    madeTrue=false; confirmed=false;
     editingId=0; dirty=true; resetResults(); draw();
     stt("Название исправлено вручную.");
     return;
   }
   if(act==="rm"){
     if(editingId===id) editingId=0;
-    madeTrue=false;
+    madeTrue=false; confirmed=false;
     files.splice(idx,1);
     resetResults();
     if(!files.length){ dirty=false; stt("Очищено"); }
@@ -1926,7 +1965,7 @@ $("fdir").addEventListener("change",function(e){
 });
 $("clr").addEventListener("click",function(){
   if(busy || verifying) return;
-  files=[];results=[];dirty=false;editingId=0;madeTrue=false;
+  files=[];results=[];dirty=false;editingId=0;madeTrue=false;confirmed=false;
   draw();drawResults();$("results").classList.remove("show");phide();
   stt("Очищено"); updateGoBtn();
 });
