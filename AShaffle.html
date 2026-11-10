@@ -97,7 +97,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.12</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.13</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -1375,6 +1375,9 @@ function verifyQueue(todo){
     if(i>=todo.length) return Promise.resolve(st);
     var f=todo[i], netAt=_netErrors;
     return lookupTrack(f.info, f.duration).then(function(found){
+      /* Латиницу пробуем заменить кириллическим написанием того же трека */
+      return preferCyrillic(found, f.duration, f.info.artist);
+    }).then(function(found){
       /* Сомнительное совпадение перепроверяем в Discogs */
       if(!found || found.score >= 0.8) return found;
       return discogsConfirm(found.artist, found.title).then(function(ok){
@@ -1416,6 +1419,24 @@ function verifyQueue(todo){
     }
     return r;
   });
+}
+
+/* Если найденный исполнитель записан латиницей, ищем тот же трек кириллицей */
+function preferCyrillic(found, dur, sourceArtist){
+  if(!found || !found.artist) return Promise.resolve(found);
+  var artist = found.artist;
+  if(!/[A-Za-z]/.test(artist) || /[А-Яа-яЁё]/.test(artist)) return Promise.resolve(found);
+  /* Только для русских треков: иначе гоняли бы лишние запросы по английским */
+  if(!/[А-Яа-яЁё]/.test((found.title || "") + " " + (sourceArtist || ""))) return Promise.resolve(found);
+  var guess = untranslit(artist);
+  if(!/[а-яё]/.test(guess)) return Promise.resolve(found);
+  var term = (guess + " " + (found.title || "")).trim();
+  return lookupDeezer(term, dur).then(function(alt){
+    if(alt && alt.artist && /[А-Яа-яЁё]/.test(alt.artist)) return alt;
+    return lookupITunes(term, dur).then(function(alt2){
+      return (alt2 && alt2.artist && /[А-Яа-яЁё]/.test(alt2.artist)) ? alt2 : found;
+    });
+  }).catch(function(){ return found; });
 }
 
 function verifyAll(){
