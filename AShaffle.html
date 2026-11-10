@@ -97,7 +97,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.13</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.14</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -1389,9 +1389,12 @@ function verifyQueue(todo){
       });
     }).then(function(found){
       if(found){
-        var same = norm(found.artist)===norm(f.info.artist) && norm(found.title)===norm(f.info.title);
-        f.info.artist = found.artist || f.info.artist;
-        f.info.title  = found.title  || f.info.title;
+        /* Если имя отличается только регистром, оставляем написание из файла */
+        var sameArtist = norm(found.artist) === norm(f.info.artist);
+        var sameTitle  = norm(found.title)  === norm(f.info.title);
+        var same = sameArtist && sameTitle;
+        f.info.artist = (sameArtist && f.info.artist) ? f.info.artist : (found.artist || f.info.artist);
+        f.info.title  = (sameTitle  && f.info.title)  ? f.info.title  : (found.title  || f.info.title);
         f.info.source = found.source || "";
         f.info.score  = found.score || 0;
         f.info.status = same ? "ok" : "fixed";
