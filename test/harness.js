@@ -34,6 +34,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "readApeTags:readApeTags,readWmaTags:readWmaTags," +
   "untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
+  "matchScore:matchScore," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -141,6 +142,8 @@ eq(api.isGoodMatchFlex("Rick Astley Never Gonna Give You Up", "Dreadsquad", "Slu
 const recs = [{ "artist-credit": [{ name: "Dabro" }], title: "На часах ноль-ноль", length: 206386 }];
 ok(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 206), "MB: совпадение с верной длительностью");
 eq(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 100), null, "MB: отсев по длительности");
+ok(api.matchScore("Dabro На часах ноль-ноль", "Dabro", "На часах ноль-ноль", 206, 206000) > 0.95, "оценка точного совпадения");
+ok(api.matchScore("Dabro На часах ноль-ноль", "Полина Гагарина", "Один в поле воин", 206, 206000) < 0.5, "чужой кандидат оценён ниже");
 
 /* ---------- ZIP ---------- */
 (async function () {
