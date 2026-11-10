@@ -97,7 +97,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.11</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.12</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -327,7 +327,23 @@ function unique(arr){
   arr.forEach(function(w){ if(!seen[w]){ seen[w]=1; out.push(w); } });
   return out;
 }
+/* Латинские буквы‑двойники внутри кириллических слов: Bетер → ветер, Mоя → моя */
+var _HOMO = { a:"а", b:"в", c:"с", e:"е", h:"н", k:"к", m:"м", o:"о", p:"р", t:"т", x:"х", y:"у" };
+function foldMixed(s){
+  return String(s||"").replace(/[A-Za-zА-Яа-яЁё]+/g, function(w){
+    if(!/[А-Яа-яЁё]/.test(w) || !/[A-Za-z]/.test(w)) return w;
+    return w.split("").map(function(ch){
+      var low = ch.toLowerCase();
+      return Object.prototype.hasOwnProperty.call(_HOMO, low) ? _HOMO[low] : ch;
+    }).join("");
+  });
+}
+/* Лишняя удвоенная буква: Мишелль → Мишель */
+function collapseDoubles(s){
+  return String(s||"").replace(/([A-Za-zА-Яа-яЁё])\1+/g, "$1");
+}
 function isGoodMatch(query, mbArtist, mbTitle, near){
+  query = foldMixed(query); mbArtist = foldMixed(mbArtist); mbTitle = foldMixed(mbTitle);
   var has = function(list, w){
     if(!near) return list.indexOf(w) >= 0;
     return list.some(function(x){ return tokenNear(w, x); });
@@ -384,7 +400,7 @@ function durOk(fileDur, candMs){
 /* Оценка кандидата: покрытие запроса, чистота лишних слов, близость длительности */
 function matchScore(query, artist, title, fileDur, candMs){
   /* Приводим обе стороны к латинице, иначе «Моя» и «Moya» не совпадут */
-  var q = unique(tokens(translit(query))), r = unique(tokens(translit((artist||"") + " " + (title||""))));
+  var q = unique(tokens(translit(foldMixed(query)))), r = unique(tokens(translit(foldMixed((artist||"") + " " + (title||"")))));
   var sigQ = q.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
   var sigR = r.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
   var near = function(a, b){ return a === b || tokenNear(a, b); };
@@ -430,8 +446,9 @@ function untranslit(s){
   return out.replace(/\s+/g," ").trim();
 }
 function isGoodMatchFlex(query, artist, title){
+  query = foldMixed(query);
   if(isGoodMatch(query, artist, title)) return true;
-  var a=artist||"", t=title||"";
+  var a=foldMixed(artist||""), t=foldMixed(title||"");
   /* Приводим обе стороны к латинице: «Dabro» ↔ «Дабро» */
   var ql=translit(query), al=translit(a), tl=translit(t);
   if((ql !== String(query).toLowerCase() || al !== a.toLowerCase() || tl !== t.toLowerCase()) &&
@@ -1318,6 +1335,11 @@ function lookupTrack(info, dur){
   /* Третий проход кириллицей: «Dabro» → «дабро» */
   var unq=untranslit(qterm);
   if(unq && unq !== qterm.toLowerCase() && /[а-яё]/.test(unq)) pushMBTerm(unq);
+  /* Смешанная письменность и лишние буквы — пробуем исправленный запрос */
+  var qfold = foldMixed(qterm);
+  if(qfold && qfold !== qterm){ pushDeezer(qfold); pushITunes(qfold); pushMBTerm(qfold); }
+  var qdup = collapseDoubles(qfold);
+  if(qdup && qdup !== qfold){ pushDeezer(qdup); pushITunes(qdup); pushMBTerm(qdup); }
   if(!cyr){
     pushDeezer(qterm);
     pushITunes(qterm);

@@ -35,6 +35,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "matchScore:matchScore,cleanJunk:cleanJunk,dropVariants:dropVariants," +
+  "foldMixed:foldMixed,collapseDoubles:collapseDoubles," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -157,6 +158,13 @@ eq(api.tokenNear("направл", "направление"), true, "усечё�
 eq(api.tokenNear("мишел", "мишель"), true, "усечённый исполнитель совпадает");
 eq(api.isGoodMatchFlex("Марат Мэлхарт", "ЧУДОBRO", ""), false, "чужой исполнитель не проходит проверку");
 eq(api.isGoodMatchFlex("Моя Мишел", "Моя Мишель", ""), true, "усечённый исполнитель проходит");
+
+/* ---------- смешанная письменность и лишние буквы ---------- */
+eq(api.foldMixed("Bетер"), "ветер", "латинская B внутри кириллицы");
+eq(api.foldMixed("Mоя"), "моя", "латинская M внутри кириллицы");
+eq(api.foldMixed("Rick Astley"), "Rick Astley", "чистую латиницу не трогаем");
+eq(api.collapseDoubles("Мишелль"), "Мишель", "лишняя удвоенная буква");
+eq(api.isGoodMatchFlex("Bетер меняет направление", "Ветер меняет направление", ""), true, "матч при смешанной письменности");
 
 /* ---------- ZIP ---------- */
 (async function () {
