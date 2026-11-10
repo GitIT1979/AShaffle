@@ -88,6 +88,9 @@ h3{margin:0 0 10px;font-size:15px}
 .big-btn:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(42,157,92,.5)}
 .big-btn:active{transform:translateY(0)}
 .big-btn:disabled{opacity:.6;cursor:wait;transform:none}
+.big-btn.mt{background:linear-gradient(135deg,#2563eb,#1d4ed8);box-shadow:0 6px 20px rgba(37,99,235,.35)}
+.big-btn.mt:hover{box-shadow:0 8px 25px rgba(37,99,235,.5)}
+.big-btn + .big-btn{margin-top:10px}
 .opt{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--m);margin:0 0 8px;padding:4px 0}
 .opt input{width:16px;height:16px;cursor:pointer}
 .opt label{cursor:pointer;user-select:none}
@@ -97,9 +100,9 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.14</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v10.0</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
-<p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
+<p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
 <div class="dz" id="dz"><span class="big">🎵</span><b>Перетащите файлы или папку сюда</b><div class="sm">или нажмите, чтобы выбрать</div></div>
 <input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff" style="display:none">
@@ -114,7 +117,6 @@ h3{margin:0 0 10px;font-size:15px}
 </div>
 <div class="fl" id="list"></div>
 <div class="vt">
-  <button class="btn" id="verify" type="button" title="Найти правильные исполнителя и название для каждого файла">🔎 Проверить названия</button>
   <span class="vsum" id="vsum"></span>
 </div>
 </div>
@@ -123,8 +125,9 @@ h3{margin:0 0 10px;font-size:15px}
   <input type="checkbox" id="numbered" checked>
   <label for="numbered">Смешивать файлы в случайном порядке и нумеровать</label>
 </div>
-<div class="req">Перед перемешиванием каждое название проверяется в интернете — без этого шага файлы не переименовываются.</div>
+<div class="req">Make this true! проверяет каждое название в интернете и возвращает треки в прежнем порядке; Ashuffle this! перемешивает уже исправленные треки.</div>
 
+<button class="big-btn mt" id="makeTrue" type="button">🪄 Make this true!</button>
 <button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
 
 <div class="pw" id="pw"><div class="pi"><span id="pl">Обработка…</span><span id="pp">0%</span></div><div class="pb"><div class="pf" id="pf"></div></div></div>
@@ -157,6 +160,7 @@ var editingId=0;
 var verifying=false;
 var cancelVerify=false;
 var _multiDir=false;
+var madeTrue=false;
 
 var CAN_PICK_DIR  = typeof window.showDirectoryPicker === "function";
 var CAN_PICK_FILE = typeof window.showSaveFilePicker  === "function";
@@ -1148,24 +1152,17 @@ function pup(d,t,l){var p=t>0?Math.round(d/t*100):0;$("pf").style.width=p+"%";$(
 function phide(){$("pw").classList.remove("show")}
 
 function updateGoBtn(){
-  var go=$("go"), vf=$("verify");
+  var mt=$("makeTrue"), go=$("go");
   var has = files.length > 0;
   if(busy){
+    mt.style.display="none";
     go.style.display="block"; go.disabled=true; go.textContent="⏳ Обработка…";
-    vf.disabled=true; vf.textContent="🔎 Проверить названия";
   } else if(verifying){
     go.style.display="none";
-    vf.disabled=false; vf.textContent="■ Остановить";
+    mt.style.display=has?"block":"none"; mt.disabled=false; mt.textContent="■ Остановить";
   } else {
-    vf.disabled=!has; vf.textContent="🔎 Проверить названия";
-    if(has && (dirty || results.length===0)){
-      var rawLeft=0;
-      files.forEach(function(f){ if(f.info.status==="raw") rawLeft++; });
-      go.style.display="block"; go.disabled=false;
-      go.textContent = rawLeft ? "🎲 Проверить и перемешать" : "🎲 Ashuffle this!";
-    } else {
-      go.style.display="none";
-    }
+    mt.style.display=has?"block":"none"; mt.disabled=false; mt.textContent="🪄 Make this true!";
+    go.style.display=(has && madeTrue)?"block":"none"; go.disabled=false; go.textContent="🎲 Ashuffle this!";
   }
   var sum=$("vsum"); if(sum) sum.textContent=summaryText();
 }
@@ -1442,23 +1439,86 @@ function preferCyrillic(found, dur, sourceArtist){
   }).catch(function(){ return found; });
 }
 
-function verifyAll(){
-  if(!files.length || busy || verifying) return Promise.resolve();
+/* Шаг 1: вернуть трекам имена, сохранив исходный порядок */
+function makeTrue(){
+  if(!files.length || busy || verifying) return;
+  busy=true; updateGoBtn(); phide(); resetResults();
   var todo=files.filter(needsRetry);
-  if(!todo.length){ stt("Все названия уже проверены. Правьте вручную через ✎."); return Promise.resolve(); }
-  verifying=true; cancelVerify=false; dirty=true;
-  resetResults(); updateGoBtn();
-  return verifyQueue(todo).then(function(st){
-    verifying=false; draw();
-    if(st.cancelled)    stt("Проверка остановлена: "+(st.changed+st.confirmed+st.missing)+" из "+todo.length+".");
-    else if(st.stopped) { /* сеть недоступна — ничего не пишем, оставляем как есть */ }
-    else                stt("Проверка завершена: исправлено "+st.changed+", подтверждено "+st.confirmed+", не найдено "+st.missing+".");
-    updateGoBtn();
+  var prep;
+  if(todo.length){
+    verifying=true; cancelVerify=false; updateGoBtn();
+    prep=verifyQueue(todo).then(function(st){ verifying=false; return st; });
+  } else {
+    prep=Promise.resolve(null);
+  }
+  prep.then(function(st){
+    if(st && st.stopped){ busy=false; draw(); return; }
+    if(st && st.cancelled){ busy=false; draw(); stt("Обработка отменена."); return; }
+    startRename();
+  }).catch(function(err){
+    console.error(err);
+    busy=false; verifying=false; phide(); updateGoBtn();
+    stt("Ошибка при обработке: "+(err&&err.message?err.message:err));
   });
 }
 
+function startRename(){
+  phide(); pshow("Возвращаю имена…");
+  results=[];
+  var j=0, failed=0, usedNames={};
+  function uniqueName(name){
+    if(!Object.prototype.hasOwnProperty.call(usedNames, name)){
+      usedNames[name]=1; return name;
+    }
+    var m=name.match(/^(.*?)(\.[^.]+)?$/), base=m[1], extPart2=m[2]||"";
+    var k=2, cand;
+    do{ cand=base+" ("+k+")"+extPart2; k++; }
+    while(Object.prototype.hasOwnProperty.call(usedNames, cand));
+    usedNames[cand]=1;
+    return cand;
+  }
+  function nextFile(){
+    if(j>=files.length){
+      phide(); drawResults();
+      $("results").classList.add("show");
+      madeTrue=true;
+      stt("Готово: "+results.length+" файлов в прежнем порядке."+(failed?" С ошибкой чтения: "+failed+".":""));
+      busy=false; updateGoBtn();
+      return;
+    }
+    var f=files[j], num=j+1;
+    var isMp3=ext(f.name)==="mp3";
+    var extPart=(f.name.match(/\.[^.]+$/) || [""])[0];
+    var finalName=uniqueName(makeName(f.info, extPart, null));
+
+    console.log("Rename: "+f.name+" → "+finalName);
+
+    makeRenamedFile(f.file, finalName, num, f.info.artist, f.info.title)
+      .catch(function(err){
+        console.error("Rename failed:", f.name, err);
+        failed++;
+        try { return new File([f.file], finalName, { type: f.file.type || "audio/mpeg" }); }
+        catch(e){ return f.file; }
+      })
+      .then(function(blob){
+        results.push({
+          file: blob,
+          name: finalName,
+          artist: f.info.artist || "unknown_artist",
+          source: f.info.source || "",
+          size: blob.size,
+          isMp3: isMp3,
+          trackNum: num
+        });
+        pup(j+1, files.length);
+        j++; setTimeout(nextFile, 0);
+      });
+  }
+  nextFile();
+}
+
 function runAshuffle(){
-  if(!files.length || busy || verifying) return;
+  if(!files.length || busy || verifying || !madeTrue) return;
   busy=true; updateGoBtn(); phide();
   resetResults();
   var useNumbered=$("numbered").checked;
@@ -1549,9 +1609,9 @@ function startShuffle(useNumbered){
 }
 
 $("go").addEventListener("click", runAshuffle);
-$("verify").addEventListener("click", function(){
+$("makeTrue").addEventListener("click", function(){
   if(verifying){ cancelVerify=true; stt("Останавливаю после текущего файла…"); return; }
-  verifyAll();
+  makeTrue();
 });
 
 /* ============================================================
@@ -1591,6 +1651,7 @@ function add(input, pathMap){
   var tail = skipped.length ? " Пропущено — "+skipped.join(", ")+"." : "";
   if(added===0){ draw(); stt("Ничего не добавлено."+tail); return; }
   editingId=0;
+  madeTrue=false;
   results=[];$("results").classList.remove("show");drawResults();draw();
   dirty=true; updateGoBtn();
   stt("Добавлено: "+added+". Всего: "+files.length+"."+tail+" Нажмите «Ashuffle this!»");
@@ -1825,7 +1886,7 @@ $("dlAll").addEventListener("click", function(){
    ============================================================ */
 $("again").addEventListener("click",function(){
   if(busy || verifying) return;
-  $("results").classList.remove("show"); results=[]; files=[]; dirty=false; editingId=0;
+  $("results").classList.remove("show"); results=[]; files=[]; dirty=false; editingId=0; madeTrue=false;
   draw(); drawResults(); phide(); stt("Готов"); updateGoBtn();
 });
 
@@ -1841,6 +1902,7 @@ $("list").addEventListener("click", function(e){
   if(act==="reset"){
     var p0=files[idx].parsed;
     files[idx].info={ artist:p0.artist, title:p0.title, _raw:p0._raw, status:"raw", source:"" };
+    madeTrue=false;
     editingId=0; dirty=true; resetResults(); draw();
     stt("Возвращено имя из файла: "+files[idx].name);
     return;
@@ -1853,12 +1915,14 @@ $("list").addEventListener("click", function(e){
     files[idx].info.title=tVal;
     files[idx].info.status="manual";
     files[idx].info.source="";
+    madeTrue=false;
     editingId=0; dirty=true; resetResults(); draw();
     stt("Название исправлено вручную.");
     return;
   }
   if(act==="rm"){
     if(editingId===id) editingId=0;
+    madeTrue=false;
     files.splice(idx,1);
     resetResults();
     if(!files.length){ dirty=false; stt("Очищено"); }
@@ -1879,7 +1943,7 @@ $("fdir").addEventListener("change",function(e){
 });
 $("clr").addEventListener("click",function(){
   if(busy || verifying) return;
-  files=[];results=[];dirty=false;editingId=0;
+  files=[];results=[];dirty=false;editingId=0;madeTrue=false;
   draw();drawResults();$("results").classList.remove("show");phide();
   stt("Очищено"); updateGoBtn();
 });
