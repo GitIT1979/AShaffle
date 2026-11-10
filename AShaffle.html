@@ -72,7 +72,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v8.6</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v8.7</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — и скачайте результат в свою папку.</p>
 
@@ -141,7 +141,11 @@ function norm(s){
 }
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function fmtSize(b){if(b<1024)return b+" Б";if(b<1048576)return (b/1024).toFixed(1)+" КБ";return (b/1048576).toFixed(1)+" МБ"}
-function theme(t){if(t==="dark"){document.documentElement.setAttribute("data-theme","dark");$("tt").textContent="☀️"}else{document.documentElement.removeAttribute("data-theme");$("tt").textContent="🌙"}}
+function theme(t){
+  if(t==="dark"){document.documentElement.setAttribute("data-theme","dark");$("tt").textContent="☀️"}
+  else{document.documentElement.removeAttribute("data-theme");$("tt").textContent="🌙"}
+  try{ localStorage.setItem("ashuffle-theme", t==="dark" ? "dark" : "light"); }catch(e){}
+}
 
 /* ============================================================
    1. ЛОКАЛЬНЫЙ ПАРСЕР
@@ -161,14 +165,22 @@ function cleanJunk(s){
     .replace(/\s+/g, " ")
     .trim();
 }
+/* Отрезает номер трека, но не съедает названия, начинающиеся с числа:
+   «01 - Intro», «07. James Bond», «01 Song» — префикс;
+   «99 Luftballons», «2001 - Одиссея» — часть названия. */
 function stripTrackPrefix(s){
   var cleaned = s, prev, iter = 0;
   do{
     prev = cleaned;
-    cleaned = cleaned.replace(/^\s*(track|трек)\s*\d+\s*[._\-\s–—−]*/i, "");
-    cleaned = cleaned.replace(/^\s*[\(\{\[]\s*\d+\s*[\)\}\]]\s*[._\-\s–—−]*/, "");
-    cleaned = cleaned.replace(/^\s*\d+\s*[._\-\s–—−]+/, "");
-    cleaned = cleaned.replace(/^[\s._\-–—−]+/, "");
+    var cand = cleaned
+      .replace(/^\s*(track|трек)\s*\d{1,4}\s*[._\-\s–—−]*/i, "")
+      .replace(/^\s*[\(\{\[]\s*\d{1,4}\s*[\)\}\]]\s*[._\-\s–—−]*/, "")
+      /* номер + явный разделитель (точка, скобка, дефис…), за ним — буква */
+      .replace(/^\s*\d{1,3}\s*[._)\]}\-–—]+\s*(?=[A-Za-zА-Яа-яЁё«"'])/, "")
+      /* номер с ведущим нулём + пробел: «01 Song» */
+      .replace(/^\s*0\d{1,3}\s+(?=[A-Za-zА-Яа-яЁё«"'])/, "")
+      .replace(/^[\s._\-–—−]+/, "");
+    if(/[A-Za-zА-Яа-яЁё]/.test(cand)) cleaned = cand;
     iter++;
   }while(cleaned !== prev && iter < 15);
   return cleaned.trim();
@@ -208,24 +220,9 @@ function trySplit(s){
       });
     }
   }
-  if(!candidates.length && s.indexOf(" ") !== -1){
-    var lastSpace = s.lastIndexOf(" ");
-    var left = s.slice(0, lastSpace).trim();
-    var right = s.slice(lastSpace + 1).trim();
-    if(left && right && /[a-zA-Zа-яА-ЯёЁ]/.test(left) && /[a-zA-Zа-яА-ЯёЁ]/.test(right)){
-      candidates.push({ artist: left, title: right, score: 3 });
-    }
-  }
-  if(!candidates.length && /[.]/.test(s)){
-    var parts2 = s.split(".");
-    if(parts2.length >= 2){
-      var left2 = parts2.slice(0, -1).join(".").trim();
-      var right2 = parts2[parts2.length-1].trim();
-      if(left2 && right2 && /[a-zA-Zа-яА-ЯёЁ]/.test(left2) && /[a-zA-Zа-яА-ЯёЁ]/.test(right2)){
-        candidates.push({ artist: left2, title: right2, score: 2 });
-      }
-    }
-  }
+  /* Раньше здесь был делёж по последнему пробелу/точке: «Bohemian Rhapsody»
+     становилось исполнителем «Bohemian», а название теряло слово. Без явного
+     разделителя исполнителя не угадываем — название сохраняем целиком. */
   if(!candidates.length) return { artist: "", title: s, score: 0, _raw: s };
   candidates.sort(function(a,b){ return b.score - a.score; });
   return candidates[0];
@@ -289,16 +286,26 @@ function isGoodMatch(query, mbArtist, mbTitle){
 }
 
 /* ============================================================
-   3. MusicBrainz + iTunes (retry 503)
+   3. MusicBrainz + iTunes (таймауты, retry 503/429)
    ============================================================ */
 var _mbCache = {}, _lastMBRequest = 0;
 
+function _fetchT(url, opts, ms){
+  if(typeof AbortController !== "function") return fetch(url, opts);
+  var ac = new AbortController();
+  var timer = setTimeout(function(){ ac.abort(); }, ms || 15000);
+  var o = {}, k;
+  for(k in (opts || {})) if(Object.prototype.hasOwnProperty.call(opts, k)) o[k] = opts[k];
+  o.signal = ac.signal;
+  return fetch(url, o).then(function(r){ clearTimeout(timer); return r; },
+                           function(e){ clearTimeout(timer); throw e; });
+}
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return fetch(url, { headers: { "User-Agent": "Ashuffle/8.6 ( https://example.com/ashuffle )" } })
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/8.7 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
-      if(r.status === 503 && attempt < 2){
-        console.warn("MB 503, retry in 2s (attempt " + (attempt+1) + ")");
+      if((r.status === 503 || r.status === 429) && attempt < 2){
+        console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
         return new Promise(function(resolve){ setTimeout(resolve, 2000); })
           .then(function(){ return _mbFetch(url, attempt + 1); });
       }
@@ -370,7 +377,7 @@ function lookupITunes(term){
     setTimeout(function(){
       _lastITRequest = Date.now();
       var url = "https://itunes.apple.com/search?term=" + encodeURIComponent(term) + "&media=music&entity=song&limit=5";
-      fetch(url)
+      _fetchT(url, null, 12000)
         .then(function(r){ if(!r.ok) throw new Error("iTunes " + r.status); return r.json(); })
         .then(function(data){
           var out = null;
@@ -399,17 +406,34 @@ function pad3(n){
   while(s.length < 3) s = "0" + s;
   return s;
 }
+var _WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+function safeNamePart(s){
+  return String(s)
+    .replace(/[\x00-\x1f\x7f]/g, "")     /* управляющие символы */
+    .replace(/[\\/:*?"<>|]/g, "_")       /* запрещены в Windows */
+    .replace(/\s+/g, " ")
+    .replace(/^[.\s]+|[.\s]+$/g, "")     /* точки и пробелы по краям ломают Windows */
+    .trim();
+}
+function cutTo(s, n){
+  if(s.length <= n) return s;
+  s = s.slice(0, n).replace(/[\s.,;:\-–—]+$/g, "");
+  return s;
+}
 function makeName(info, originalExt, trackNum){
   var artist = info && info.artist ? info.artist.trim() : "";
   var title  = info && info.title  ? info.title.trim()  : "unknown_track";
   if(!artist || !/[a-zA-Zа-яА-ЯёЁ]/.test(artist)) artist = "unknown_artist";
   if(!title || !/[a-zA-Zа-яА-ЯёЁ0-9]/.test(title))  title  = "unknown_track";
-  function safe(s){ return s.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim(); }
+  artist = cutTo(safeNamePart(artist), 60) || "unknown_artist";
+  title  = cutTo(safeNamePart(title), 90)  || "unknown_track";
+  if(_WIN_RESERVED.test(artist)) artist = "_" + artist;
+  if(_WIN_RESERVED.test(title))  title  = "_" + title;
   var prefix = "";
   if(trackNum && typeof trackNum === "number" && trackNum > 0){
     prefix = pad3(trackNum) + " - ";
   }
-  return prefix + safe(artist) + " - " + safe(title) + (originalExt || "");
+  return prefix + artist + " - " + title + (originalExt || "");
 }
 
 /* ============================================================
@@ -438,43 +462,73 @@ function inter(g){
 /* ============================================================
    6. ID3v2.4 + File с новым именем
    ============================================================ */
+var _REPLACED_FRAMES = { TIT2: 1, TPE1: 1, TRCK: 1 };
+function _syncsafe(u8, off){
+  return ((u8[off]&0x7f)<<21)|((u8[off+1]&0x7f)<<14)|((u8[off+2]&0x7f)<<7)|(u8[off+3]&0x7f);
+}
+/* Читает существующий ID3v2-тег. frames заполняется только для 2.3/2.4 без
+   unsynchronisation; для остальных версий тег всё равно нужно пропустить целиком. */
+function readId3Tag(u8){
+  if(u8.length < 10 || u8[0] !== 0x49 || u8[1] !== 0x44 || u8[2] !== 0x33) return null;
+  var ver = u8[3], flags = u8[5], size = _syncsafe(u8, 6);
+  var tag = { size: size, footer: (flags & 0x10) ? 10 : 0, frames: [] };
+  if(ver !== 3 && ver !== 4) return tag;
+  if(flags & 0x80) return tag;
+  var end = Math.min(10 + size, u8.length), pos = 10;
+  while(pos + 10 <= end){
+    var id = String.fromCharCode(u8[pos], u8[pos+1], u8[pos+2], u8[pos+3]);
+    if(!/^[A-Z0-9]{4}$/.test(id)) break;
+    var len = ver === 4
+      ? _syncsafe(u8, pos + 4)
+      : (((u8[pos+4]<<24)|(u8[pos+5]<<16)|(u8[pos+6]<<8)|u8[pos+7]) >>> 0);
+    if(!len || pos + 10 + len > end) break;
+    tag.frames.push({ id: id, body: u8.subarray(pos + 10, pos + 10 + len) });
+    pos += 10 + len;
+  }
+  return tag;
+}
+function _textFrameBody(value){
+  var textBytes = new TextEncoder().encode(value);
+  var body = new Uint8Array(1 + textBytes.length);
+  body[0] = 0x03;
+  body.set(textBytes, 1);
+  return body;
+}
 function buildId3v24Tag(frames){
-  var enc = new TextEncoder();
-  var chunks = [];
-  frames.forEach(function(f){
-    var textBytes = enc.encode(f.value);
-    var frameDataLen = 1 + textBytes.length;
-    var frame = new Uint8Array(10 + frameDataLen);
+  var chunks = frames.map(function(f){
+    var body = f.body || _textFrameBody(f.value || "");
+    var len = body.length;
+    var frame = new Uint8Array(10 + len);
     frame[0]=f.id.charCodeAt(0);
     frame[1]=f.id.charCodeAt(1);
     frame[2]=f.id.charCodeAt(2);
     frame[3]=f.id.charCodeAt(3);
-    frame[4] = (frameDataLen >> 21) & 0x7f;
-    frame[5] = (frameDataLen >> 14) & 0x7f;
-    frame[6] = (frameDataLen >> 7) & 0x7f;
-    frame[7] = frameDataLen & 0x7f;
-    frame[8]=0; frame[9]=0;
-    frame[10]=0x03;
-    frame.set(textBytes, 11);
-    chunks.push(frame);
+    frame[4] = (len >> 21) & 0x7f;
+    frame[5] = (len >> 14) & 0x7f;
+    frame[6] = (len >> 7) & 0x7f;
+    frame[7] = len & 0x7f;
+    frame.set(body, 10);
+    return frame;
   });
   var totalData = 0;
   chunks.forEach(function(c){ totalData += c.length; });
-  var header = new Uint8Array(10);
-  header[0]=0x49; header[1]=0x44; header[2]=0x33;
-  header[3]=0x04; header[4]=0x00; header[5]=0x00;
-  header[6] = (totalData >> 21) & 0x7f;
-  header[7] = (totalData >> 14) & 0x7f;
-  header[8] = (totalData >> 7) & 0x7f;
-  header[9] = totalData & 0x7f;
   var result = new Uint8Array(10 + totalData);
-  result.set(header, 0);
+  result[0]=0x49; result[1]=0x44; result[2]=0x33;
+  result[3]=0x04; result[4]=0x00; result[5]=0x00;
+  result[6] = (totalData >> 21) & 0x7f;
+  result[7] = (totalData >> 14) & 0x7f;
+  result[8] = (totalData >> 7) & 0x7f;
+  result[9] = totalData & 0x7f;
   var off = 10;
   chunks.forEach(function(c){ result.set(c, off); off += c.length; });
   return result;
 }
 function makeRenamedFile(originalFile, finalName, num, artist, title){
   return new Promise(function(resolve){
+    function fallback(){
+      try { resolve(new File([originalFile], finalName, { type: originalFile.type || "audio/mpeg" })); }
+      catch(e){ resolve(originalFile); }
+    }
     if(ext(originalFile.name) !== "mp3"){
       try { resolve(new File([originalFile], finalName, { type: originalFile.type || "audio/mpeg" })); }
       catch(e){ resolve(originalFile); }
@@ -482,14 +536,19 @@ function makeRenamedFile(originalFile, finalName, num, artist, title){
     }
     originalFile.arrayBuffer().then(function(buf){
       try{
-        var u8 = new Uint8Array(buf), offset = 0;
-        if(u8[0]===0x49 && u8[1]===0x44 && u8[2]===0x33){
-          var sz = ((u8[6]&0x7f)<<21)|((u8[7]&0x7f)<<14)|((u8[8]&0x7f)<<7)|(u8[9]&0x7f);
-          offset = 10 + sz;
-        }
+        var u8 = new Uint8Array(buf);
+        var old = readId3Tag(u8);
+        var offset = old ? 10 + old.size + old.footer : 0;
+        if(offset > u8.length) offset = u8.length;
         var frames = [{ id: "TRCK", value: String(num) }];
         if(title && title !== "unknown_track")  frames.push({ id: "TIT2", value: title });
         if(artist && artist !== "unknown_artist") frames.push({ id: "TPE1", value: artist });
+        /* Обложка, альбом, год и прочее раньше терялись — переносим их в новый тег. */
+        if(old && old.frames.length){
+          old.frames.forEach(function(f){
+            if(!_REPLACED_FRAMES[f.id]) frames.push({ id: f.id, body: f.body });
+          });
+        }
         var tag = buildId3v24Tag(frames);
         var audio = u8.subarray(offset);
         var out = new Uint8Array(tag.length + audio.length);
@@ -498,12 +557,11 @@ function makeRenamedFile(originalFile, finalName, num, artist, title){
         resolve(new File([out], finalName, { type: "audio/mpeg" }));
       }catch(e){
         console.error("ID3 write failed:", originalFile.name, e);
-        try { resolve(new File([originalFile], finalName, { type: originalFile.type || "audio/mpeg" })); }
-        catch(e2){ resolve(originalFile); }
+        fallback();
       }
-    }).catch(function(){
-      try { resolve(new File([originalFile], finalName, { type: originalFile.type || "audio/mpeg" })); }
-      catch(e2){ resolve(originalFile); }
+    }).catch(function(e){
+      console.error("Read failed:", originalFile.name, e);
+      fallback();
     });
   });
 }
@@ -641,23 +699,40 @@ function runAshuffle(){
 
     phide(); pshow("Обработка файлов…");
     results = [];
-    var j = 0;
+    var j = 0, failed = 0, usedNames = {};
+    function uniqueName(name){
+      if(!Object.prototype.hasOwnProperty.call(usedNames, name)){
+        usedNames[name] = 1; return name;
+      }
+      var m = name.match(/^(.*?)(\.[^.]+)?$/), base = m[1], extPart2 = m[2] || "";
+      var k = 2, cand;
+      do{ cand = base + " (" + k + ")" + extPart2; k++; }
+      while(Object.prototype.hasOwnProperty.call(usedNames, cand));
+      usedNames[cand] = 1;
+      return cand;
+    }
     function nextFile(){
       if(j >= ordered.length){
         phide(); drawResults();
         $("results").classList.add("show");
-        stt("Готово: "+results.length+" файлов.");
+        stt("Готово: "+results.length+" файлов." + (failed ? " С ошибкой чтения: "+failed+"." : ""));
         busy=false; dirty=false; updateGoBtn();
         return;
       }
       var p = ordered[j], src = p.source, num = j + 1;
       var isMp3 = ext(src.name) === "mp3";
       var extPart = (src.name.match(/\.[^.]+$/) || [""])[0];
-      var finalName = makeName(p.info, extPart, useNumbered ? num : null);
+      var finalName = uniqueName(makeName(p.info, extPart, useNumbered ? num : null));
 
       console.log("Rename: " + src.name + " → " + finalName);
 
       makeRenamedFile(src.file, finalName, num, p.info.artist, p.info.title)
+        .catch(function(err){
+          console.error("Rename failed:", src.name, err);
+          failed++;
+          try { return new File([src.file], finalName, { type: src.file.type || "audio/mpeg" }); }
+          catch(e){ return src.file; }
+        })
         .then(function(blob){
           results.push({
             file: blob,
@@ -684,24 +759,31 @@ $("go").addEventListener("click", runAshuffle);
 /* ============================================================
    9. ДОБАВЛЕНИЕ
    ============================================================ */
+function fileKey(name, size, path){
+  return name + "|" + (size || 0) + "|" + (path || "");
+}
 function add(input, pathMap){
   if(busy) return;
-  var added=0, ex={};
-  files.forEach(function(f){ ex[f.name+"|"+(f.file.size||0)]=1; });
+  var added=0, dups=0, notAudio=0, ex={};
+  files.forEach(function(f){ ex[fileKey(f.name, f.file.size, f.path)]=1; });
   for(var i=0;i<input.length;i++){
     var f=input[i], e=ext(f.name);
-    if(!e||!EX[e]) continue;
-    var k=f.name+"|"+f.size;
-    if(ex[k]) continue;
-    ex[k]=1;
+    if(!e||!EX[e]){ notAudio++; continue; }
     var p=pathMap && pathMap[i] ? pathMap[i] : (f.webkitRelativePath||"");
+    var k=fileKey(f.name, f.size, p);
+    if(ex[k]){ dups++; continue; }
+    ex[k]=1;
     files.push({name:f.name, file:f, path:p});
     added++;
   }
-  if(added===0){draw();return}
+  var skipped=[];
+  if(dups) skipped.push("повторов: "+dups);
+  if(notAudio) skipped.push("не аудио: "+notAudio);
+  var tail = skipped.length ? " Пропущено — "+skipped.join(", ")+"." : "";
+  if(added===0){ draw(); stt("Ничего не добавлено."+tail); return; }
   results=[];$("results").classList.remove("show");drawResults();draw();
   dirty=true; updateGoBtn();
-  stt("Добавлено: "+added+". Всего: "+files.length+". Нажмите «Ashuffle this!»");
+  stt("Добавлено: "+added+". Всего: "+files.length+"."+tail+" Нажмите «Ashuffle this!»");
 }
 
 /* ============================================================
@@ -745,6 +827,15 @@ function buildZipBlob(entries, onProgress){
       localTotal += f.localSize;
       cdTotal += f.cdSize;
     });
+    if(files.length > 65535){
+      return Promise.reject(new Error("файлов больше 65535 — ZIP столько не хранит"));
+    }
+    if(localTotal + cdTotal + 22 > 0xFFFFFFFF){
+      return Promise.reject(new Error("архив больше 4 ГБ — сохраните результат в папку"));
+    }
+    var now = new Date();
+    var dosTime = ((now.getHours() & 0x1f) << 11) | ((now.getMinutes() & 0x3f) << 5) | ((now.getSeconds() / 2) & 0x1f);
+    var dosDate = (((now.getFullYear() - 1980) & 0x7f) << 9) | (((now.getMonth() + 1) & 0x0f) << 5) | (now.getDate() & 0x1f);
     var out = new Uint8Array(localTotal + cdTotal + 22);
     var off = 0;
     var localOffsets = [];
@@ -754,8 +845,8 @@ function buildZipBlob(entries, onProgress){
       _w16(out, off, 20); off += 2;
       _w16(out, off, 0x0800); off += 2;
       _w16(out, off, 0); off += 2;
-      _w16(out, off, 0); off += 2;
-      _w16(out, off, 0); off += 2;
+      _w16(out, off, dosTime); off += 2;
+      _w16(out, off, dosDate); off += 2;
       _w32(out, off, f.crc); off += 4;
       _w32(out, off, f.size); off += 4;
       _w32(out, off, f.size); off += 4;
@@ -771,8 +862,8 @@ function buildZipBlob(entries, onProgress){
       _w16(out, off, 20); off += 2;
       _w16(out, off, 0x0800); off += 2;
       _w16(out, off, 0); off += 2;
-      _w16(out, off, 0); off += 2;
-      _w16(out, off, 0); off += 2;
+      _w16(out, off, dosTime); off += 2;
+      _w16(out, off, dosDate); off += 2;
       _w32(out, off, f.crc); off += 4;
       _w32(out, off, f.size); off += 4;
       _w32(out, off, f.size); off += 4;
@@ -843,6 +934,9 @@ function downloadAsZipViaAnchor(){
     setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
     phide();
     stt("ZIP сохранён: " + results.length + " файлов");
+  }).catch(function(e){
+    phide();
+    stt("Не удалось собрать ZIP: " + (e && e.message ? e.message : e));
   });
 }
 
@@ -991,6 +1085,7 @@ if(!CAN_PICK_DIR){
   $("dlAll").title = "Сохранить файлы в выбранную папку";
 }
 
+try{ if(localStorage.getItem("ashuffle-theme")==="dark") theme("dark"); }catch(e){}
 draw();stt("Готов к работе");
 })();
 </script>
