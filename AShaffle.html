@@ -96,7 +96,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.0</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.1</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -295,24 +295,49 @@ function unique(arr){
   arr.forEach(function(w){ if(!seen[w]){ seen[w]=1; out.push(w); } });
   return out;
 }
-function isGoodMatch(query, mbArtist, mbTitle){
+function isGoodMatch(query, mbArtist, mbTitle, near){
+  var has = function(list, w){
+    if(!near) return list.indexOf(w) >= 0;
+    return list.some(function(x){ return tokenNear(w, x); });
+  };
   var combined = (mbArtist || "") + " " + (mbTitle || "");
   var q = unique(tokens(query));
   var r = unique(tokens(combined));
   var sigQ = q.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
   var sigR = r.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
   if(!sigQ.length) return true;
-  var allIn = sigQ.every(function(w){ return r.indexOf(w) >= 0; });
+  var allIn = sigQ.every(function(w){ return has(r, w); });
   if(!allIn){
-    var allIn2 = sigR.every(function(w){ return q.indexOf(w) >= 0; });
+    var allIn2 = sigR.every(function(w){ return has(q, w); });
     return allIn2;
   }
-  var extra = sigR.filter(function(w){ return q.indexOf(w) < 0; });
+  var extra = sigR.filter(function(w){ return !has(q, w); });
   for(var k in SUSPICIOUS){
-    if(extra.indexOf(k) >= 0 && q.indexOf(k) < 0) return false;
+    if(extra.indexOf(k) >= 0 && !has(q, k)) return false;
   }
   if(extra.length > sigQ.length) return false;
   return true;
+}
+function lev(a, b){
+  var m=a.length, n=b.length, i, j;
+  var prev=new Array(n+1), cur=new Array(n+1);
+  for(j=0;j<=n;j++) prev[j]=j;
+  for(i=1;i<=m;i++){
+    cur[0]=i;
+    for(j=1;j<=n;j++){
+      var cost = a.charAt(i-1)===b.charAt(j-1) ? 0 : 1;
+      cur[j]=Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost);
+    }
+    var t=prev; prev=cur; cur=t;
+  }
+  return prev[n];
+}
+/* Мягкий знак и ы/и теряются при транслите, поэтому сравниваем токены приближённо */
+function tokenNear(a, b){
+  if(a === b) return true;
+  var la=a.length, lb=b.length, min=Math.min(la,lb);
+  if(min < 4 || Math.abs(la-lb) > 2) return false;
+  return lev(a,b) <= (min >= 6 ? 2 : 1);
 }
 
 /* Допуск по длительности: ремастер или тишина в начале могут добавить пару секунд */
@@ -330,13 +355,39 @@ function translit(s){
     return Object.prototype.hasOwnProperty.call(_TR, ch) ? _TR[ch] : ch;
   }).join("").replace(/\s+/g," ").trim();
 }
+/* Латиница → кириллица: «Dabro» → «дабро», «VityaDusha» → «витя душа» */
+var _UNTR = [
+  ["shch","щ"],["sch","щ"],["zh","ж"],["kh","х"],["ts","ц"],["ch","ч"],["sh","ш"],
+  ["yu","ю"],["ya","я"],["yo","ё"],["ye","е"],["ii","ий"],["yy","ый"],
+  ["a","а"],["b","б"],["c","к"],["d","д"],["e","е"],["f","ф"],["g","г"],["h","х"],
+  ["i","и"],["j","дж"],["k","к"],["l","л"],["m","м"],["n","н"],["o","о"],["p","п"],
+  ["q","к"],["r","р"],["s","с"],["t","т"],["u","у"],["v","в"],["w","в"],["x","кс"],
+  ["y","ы"],["z","з"]
+];
+function untranslit(s){
+  var src = String(s||"").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  var out = "", i = 0;
+  while(i < src.length){
+    var hit = null, len = 0;
+    for(var k=0;k<_UNTR.length;k++){
+      var seq = _UNTR[k][0];
+      if(src.substr(i, seq.length) === seq){ hit = _UNTR[k][1]; len = seq.length; break; }
+    }
+    if(hit === null){ out += src.charAt(i); i++; }
+    else { out += hit; i += len; }
+  }
+  return out.replace(/\s+/g," ").trim();
+}
 function isGoodMatchFlex(query, artist, title){
   if(isGoodMatch(query, artist, title)) return true;
-  var tq = translit(query);
-  if(tq && tq !== String(query).toLowerCase() && isGoodMatch(tq, artist, title)) return true;
-  var combo = (artist||"") + " " + (title||"");
-  var tr = translit(combo);
-  if(tr && tr !== combo.toLowerCase() && isGoodMatch(query, tr, "")) return true;
+  var a=artist||"", t=title||"";
+  /* Приводим обе стороны к латинице: «Dabro» ↔ «Дабро» */
+  var ql=translit(query), al=translit(a), tl=translit(t);
+  if((ql !== String(query).toLowerCase() || al !== a.toLowerCase() || tl !== t.toLowerCase()) &&
+     isGoodMatch(ql, al, tl, true)) return true;
+  /* И к кириллице: «VityaDusha» ↔ «ВитяДуша» */
+  var qu=untranslit(query);
+  if(/[а-яё]/.test(qu) && isGoodMatch(qu, untranslit(a), untranslit(t), true)) return true;
   return false;
 }
 
@@ -357,7 +408,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.0 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.1 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -864,6 +915,11 @@ function lookupTrack(info, dur){
   var trq=translit(primary || term);
   if(trq && trq !== (primary || term).toLowerCase()) steps.push(function(){
     return lookupMusicBrainzByRecording(trq).then(function(r){ return pickMusicBrainzResult(r, trq, dur); });
+  });
+  /* Третий проход кириллицей: «Dabro» → «дабро» */
+  var unq=untranslit(primary || term);
+  if(unq && unq !== (primary || term).toLowerCase() && /[а-яё]/.test(unq)) steps.push(function(){
+    return lookupMusicBrainzByRecording(unq).then(function(r){ return pickMusicBrainzResult(r, unq, dur); });
   });
   steps.push(function(){ return lookupITunes(primary || term, dur); });
 

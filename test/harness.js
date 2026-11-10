@@ -30,6 +30,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "buildZipBlob:buildZipBlob,makeRenamedFile:makeRenamedFile," +
   "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext," +
   "decodeTextFrame:decodeTextFrame,readMp3Tags:readMp3Tags,translit:translit,durOk:durOk," +
+  "untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText};\n})();");
 
@@ -122,6 +123,13 @@ eq(api.durOk(200, 200000), true, "длительность совпала");
 eq(api.durOk(200, 230000), false, "длительность расходится на 30 с");
 eq(api.durOk(0, 230000), true, "длительность неизвестна — не отсекаем");
 eq(api.isGoodMatchFlex("Delfin Lyubov", "Дельфин", "Любовь"), true, "матч через транслит результата");
+eq(api.untranslit("Dabro"), "дабро", "обратный транслит: Dabro");
+eq(api.untranslit("VityaDusha"), "витя душа", "обратный транслит: camelCase");
+eq(api.untranslit("Дельфин"), "дельфин", "обратный транслит не трогает кириллицу");
+eq(api.tokenNear("делфин", "дельфин"), true, "нечёткое сравнение: мягкий знак");
+eq(api.isGoodMatchFlex("Dabro На часах ноль-ноль", "Дабро", "На часах ноль-ноль"), true, "матч: латиница ↔ кириллица");
+eq(api.isGoodMatchFlex("VityaDusha Груз былого", "ВитяДуша", "Груз былого"), true, "матч: слитное латинское написание");
+eq(api.isGoodMatchFlex("Rick Astley Never Gonna Give You Up", "Dreadsquad", "Slumdog millionaire"), false, "ложное совпадение не принято");
 
 const recs = [{ "artist-credit": [{ name: "Dabro" }], title: "На часах ноль-ноль", length: 206386 }];
 ok(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 206), "MB: совпадение с верной длительностью");
