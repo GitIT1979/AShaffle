@@ -101,7 +101,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.0</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.1</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1152,10 +1152,11 @@ function phide(){$("pw").classList.remove("show")}
 
 function updateGoBtn(){
   var mt=$("makeTrue"), ok=$("confirm"), go=$("go");
-  var fc=$("filesCard"), acts=$("actions"), rc=$("results");
+  var fc=$("filesCard"), acts=$("actions"), rc=$("results"), dz=$("dz");
   var has = files.length > 0;
   if(fc){ fc.style.display = confirmed ? "none" : "block"; fc.classList.remove("anim-out"); }
   if(acts){ acts.style.display = confirmed ? "none" : "flex"; acts.classList.remove("anim-out"); }
+  if(dz){ dz.style.display = confirmed ? "none" : "block"; dz.classList.remove("anim-out"); }
   if(rc){ if(confirmed && results.length) rc.classList.add("show"); else rc.classList.remove("show"); }
 
   if(busy){
@@ -1527,13 +1528,15 @@ function startRename(){
 /* Переход к списку результатов: рабочий список и кнопки скрываются с эффектом */
 function confirmResults(){
   if(!madeTrue || confirmed || busy || verifying || !results.length) return;
-  var fc=$("filesCard"), acts=$("actions");
+  var fc=$("filesCard"), acts=$("actions"), dz=$("dz");
   if(fc) fc.classList.add("anim-out");
   if(acts) acts.classList.add("anim-out");
+  if(dz) dz.classList.add("anim-out");
   setTimeout(function(){
     confirmed=true;
     if(fc) fc.classList.remove("anim-out");
     if(acts) acts.classList.remove("anim-out");
+    if(dz) dz.classList.remove("anim-out");
     updateGoBtn();
     var rc=$("results");
     if(rc){
