@@ -15,7 +15,6 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .ver{color:var(--m);font-size:12px}
 .tag{color:var(--m);font-style:italic;margin:0 0 4px;font-size:13px}
 .hint{color:var(--m);font-size:13px;margin:0 0 16px;line-height:1.5}
-.slogan{color:var(--gd);font-size:13.5px;font-weight:600;margin:-10px 0 16px}
 .tt{margin-left:auto;background:var(--c);border:1px solid var(--b);color:var(--t);width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:17px}
 .tt:hover{background:var(--h)}
 .card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:14px}
@@ -89,7 +88,6 @@ h3{margin:0 0 10px;font-size:15px}
 .big-btn:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(42,157,92,.5)}
 .big-btn:active{transform:translateY(0)}
 .big-btn:disabled{opacity:.6;cursor:wait;transform:none}
-@media (max-width:520px){ .big-btn{font-size:18px;padding:16px 10px} }
 .opt{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--m);margin:0 0 8px;padding:4px 0}
 .opt input{width:16px;height:16px;cursor:pointer}
 .opt label{cursor:pointer;user-select:none}
@@ -99,10 +97,9 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.6</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.5</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
-<p class="hint">Загрузи треки, нажми <b>🎲 Rename and Ashuffle this!</b> — программа с использованием Интернета постарается найти их правильные названия, а затем перемешает их в случайном порядке.</p>
-<p class="slogan">Сделай свой плейлист непривычным!</p>
+<p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
 <div class="dz" id="dz"><span class="big">🎵</span><b>Перетащите файлы или папку сюда</b><div class="sm">или нажмите, чтобы выбрать</div></div>
 <input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff" style="display:none">
@@ -128,7 +125,7 @@ h3{margin:0 0 10px;font-size:15px}
 </div>
 <div class="req">Перед перемешиванием каждое название проверяется в интернете — без этого шага файлы не переименовываются.</div>
 
-<button class="big-btn" id="go" type="button">🎲 Rename and Ashuffle this!</button>
+<button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
 
 <div class="pw" id="pw"><div class="pi"><span id="pl">Обработка…</span><span id="pp">0%</span></div><div class="pb"><div class="pf" id="pf"></div></div></div>
 
@@ -413,7 +410,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.6 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.5 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -1040,8 +1037,10 @@ function updateGoBtn(){
   } else {
     vf.disabled=!has; vf.textContent="🔎 Проверить названия";
     if(has && (dirty || results.length===0)){
+      var rawLeft=0;
+      files.forEach(function(f){ if(f.info.status==="raw") rawLeft++; });
       go.style.display="block"; go.disabled=false;
-      go.textContent = "🎲 Rename and Ashuffle this!";
+      go.textContent = rawLeft ? "🎲 Проверить и перемешать" : "🎲 Ashuffle this!";
     } else {
       go.style.display="none";
     }
@@ -1387,7 +1386,7 @@ function add(input, pathMap){
   editingId=0;
   results=[];$("results").classList.remove("show");drawResults();draw();
   dirty=true; updateGoBtn();
-  stt("Добавлено: "+added+". Всего: "+files.length+"."+tail+" Нажмите «Rename and Ashuffle this!»");
+  stt("Добавлено: "+added+". Всего: "+files.length+"."+tail+" Нажмите «Ashuffle this!»");
 }
 
 /* ============================================================
