@@ -97,7 +97,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.8</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.9</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -459,7 +459,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.8 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.9 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -509,7 +509,7 @@ function pickMusicBrainzResult(recordings, query, dur){
     if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
     if(!durOk(dur, rec.length)) continue;
     if(!isGoodMatchFlex(query, mbArtist, mbTitle)) continue;
-    var cleanTitle = cleanMBTitle(mbTitle);
+    var cleanTitle = String(mbTitle).trim();
     var s = matchScore(query, mbArtist, mbTitle, dur, rec.length);
     if(s > bestScore + 1e-9 || (best && Math.abs(s - bestScore) <= 1e-9 && cleanTitle.length < best.title.length)){
       bestScore = s;
@@ -518,20 +518,66 @@ function pickMusicBrainzResult(recordings, query, dur){
   }
   return best;
 }
-var _STRIP_PAREN = { remaster:1, remastered:1, digital:1, deluxe:1, edition:1,
-                     bonus:1, version:1, explicit:1, clean:1, mono:1,
-                     stereo:1, extended:1, edit:1 };
-function cleanMBTitle(t){
-  return t.replace(/\s*\(([^)]*)\)/g, function(m, inner){
-    var words = inner.toLowerCase().split(/[\s,\-]+/).filter(Boolean);
-    if(!words.length) return m;
-    var allStrippable = words.every(function(w){
-      return _STRIP_PAREN[w] || /^\d{4}$/.test(w) || /^\d+$/.test(w);
-    });
-    return allStrippable ? "" : m;
-  }).replace(/\s+/g, " ").trim();
-}
 var _itCache = {}, _lastITRequest = 0;
+/* Deezer: ключ не нужен, но CORS нет — берём через JSONP. Название оставляем как есть. */
+var _dzCache = {}, _jsonpSeq = 0;
+function _jsonp(url, cbParam, timeoutMs){
+  return new Promise(function(resolve){
+    var name = "__asj" + (++_jsonpSeq) + "_" + Date.now();
+    var script = document.createElement("script");
+    var done = false;
+    function finish(data){
+      if(done) return;
+      done = true;
+      try{ delete window[name]; }catch(e){ window[name] = undefined; }
+      if(script.parentNode) script.parentNode.removeChild(script);
+      resolve(data || null);
+    }
+    window[name] = function(data){ finish(data); };
+    script.onerror = function(){ finish(null); };
+    script.src = url + "&" + cbParam + "=" + encodeURIComponent(name);
+    setTimeout(function(){ finish(null); }, timeoutMs || 10000);
+    document.body.appendChild(script);
+  });
+}
+function lookupDeezer(term, dur){
+  if(!term) return Promise.resolve(null);
+  var key = "dz|" + Math.round(dur||0) + "|" + term.toLowerCase();
+  if(Object.prototype.hasOwnProperty.call(_dzCache, key)) return Promise.resolve(_dzCache[key]);
+  var url = "https://api.deezer.com/search?q=" + encodeURIComponent(term) + "&limit=5&output=jsonp";
+  return _jsonp(url, "callback", 10000).then(function(json){
+    var out = null, best = -1;
+    ((json && json.data) || []).forEach(function(t){
+      if(!t || !t.title || !t.artist || !t.artist.name) return;
+      if(!durOk(dur, (t.duration || 0) * 1000)) return;
+      if(!isGoodMatchFlex(term, t.artist.name, t.title)) return;
+      var s = matchScore(term, t.artist.name, t.title, dur, (t.duration || 0) * 1000);
+      if(s > best + 1e-9 || (out && Math.abs(s - best) <= 1e-9 && String(t.title).length < out.title.length)){
+        best = s;
+        out = { artist: t.artist.name, title: String(t.title).trim(), source: "Deezer", score: s };
+      }
+    });
+    _dzCache[key] = out;
+    return out;
+  }).catch(function(){ _dzCache[key] = null; _netErrors++; return null; });
+}
+/* Discogs — только для перекрёстной проверки сомнительных совпадений */
+var _dcCache = {};
+function discogsConfirm(artist, title){
+  var q = ((artist ? artist + " " : "") + title).trim();
+  if(!q) return Promise.resolve(false);
+  var key = "dc|" + q.toLowerCase();
+  if(Object.prototype.hasOwnProperty.call(_dcCache, key)) return Promise.resolve(_dcCache[key]);
+  return _fetchT("https://api.discogs.com/database/search?type=release&per_page=5&q=" + encodeURIComponent(q),
+                 { headers: { "User-Agent": "Ashuffle/9.9 ( https://example.com/ashuffle )" } }, 10000)
+    .then(function(r){ if(!r.ok) throw new Error("Discogs " + r.status); return r.json(); })
+    .then(function(j){
+      var ok = ((j && j.results) || []).some(function(x){ return isGoodMatchFlex(q, x.title || "", ""); });
+      _dcCache[key] = ok;
+      return ok;
+    })
+    .catch(function(){ _dcCache[key] = false; return false; });
+}
 function lookupITunes(term, dur){
   if(!CAN_ITUNES) return Promise.resolve(null);
   if(!term) return Promise.resolve(null);
@@ -553,7 +599,7 @@ function lookupITunes(term, dur){
               if(!/[a-zA-Zа-яА-ЯёЁ]/.test(res.trackName)) continue;
               if(!durOk(dur, res.trackTimeMillis)) continue;
               if(!isGoodMatchFlex(term, res.artistName, res.trackName)) continue;
-              var cleanTitle = cleanMBTitle(res.trackName);
+              var cleanTitle = String(res.trackName).trim();
               var sc = matchScore(term, res.artistName, res.trackName, dur, res.trackTimeMillis);
               if(sc > bestScore + 1e-9 || (out && Math.abs(sc - bestScore) <= 1e-9 && cleanTitle.length < out.title.length)){
                 bestScore = sc;
@@ -1228,28 +1274,41 @@ function lookupTrack(info, dur){
   var cyr = /[а-яё]/i.test(term);
 
   var steps=[];
-  /* Сначала точный запрос «исполнитель + название» — он даёт меньше мусора */
-  if(primary) steps.push(function(){
-    return lookupMusicBrainzByArtistTitle(a, titleQ || t).then(function(r){ return pickMusicBrainzResult(r, primary, dur); });
-  });
-  /* Русские названия в MusicBrainz часто отсутствуют, у Apple каталог полнее */
-  if(cyr) steps.push(function(){ return lookupITunes(qterm, dur); });
-  if(qterm) steps.push(function(){
-    return lookupMusicBrainzByRecording(qterm).then(function(r){ return pickMusicBrainzResult(r, qterm, dur); });
-  });
+  function pushMBPrecise(){
+    steps.push(function(){
+      return lookupMusicBrainzByArtistTitle(a, titleQ || t).then(function(r){ return pickMusicBrainzResult(r, primary, dur); });
+    });
+  }
+  function pushMBTerm(term){
+    steps.push(function(){
+      return lookupMusicBrainzByRecording(term).then(function(r){ return pickMusicBrainzResult(r, term, dur); });
+    });
+  }
+  function pushDeezer(term){ steps.push(function(){ return lookupDeezer(term, dur); }); }
+  function pushITunes(term){ steps.push(function(){ return lookupITunes(term, dur); }); }
+
+  if(cyr){
+    /* У русских треков MusicBrainz часто пуст, а Deezer и Apple знают каталог */
+    pushDeezer(qterm);
+    pushITunes(qterm);
+    if(primary) pushMBPrecise();
+    pushMBTerm(qterm);
+  } else {
+    if(primary) pushMBPrecise();
+    pushMBTerm(qterm);
+  }
   /* Второй проход латиницей: «Дельфин» → «Delfin» */
   var trq=translit(qterm);
-  if(trq && trq !== qterm.toLowerCase()) steps.push(function(){
-    return lookupMusicBrainzByRecording(trq).then(function(r){ return pickMusicBrainzResult(r, trq, dur); });
-  });
+  if(trq && trq !== qterm.toLowerCase()) pushMBTerm(trq);
   /* Третий проход кириллицей: «Dabro» → «дабро» */
   var unq=untranslit(qterm);
-  if(unq && unq !== qterm.toLowerCase() && /[а-яё]/.test(unq)) steps.push(function(){
-    return lookupMusicBrainzByRecording(unq).then(function(r){ return pickMusicBrainzResult(r, unq, dur); });
-  });
-  if(!cyr) steps.push(function(){ return lookupITunes(qterm, dur); });
-  /* Обрезанное имя файла («направл» вместо «направление») — пробуем короткий запрос */
-  if(shortTerm) steps.push(function(){ return lookupITunes(shortTerm, dur); });
+  if(unq && unq !== qterm.toLowerCase() && /[а-яё]/.test(unq)) pushMBTerm(unq);
+  if(!cyr){
+    pushDeezer(qterm);
+    pushITunes(qterm);
+  }
+  /* Обрезанное имя файла («направл» вместо «направление») — короткий запрос */
+  if(shortTerm){ pushDeezer(shortTerm); pushITunes(shortTerm); }
 
   var i=0;
   function next(){
@@ -1269,6 +1328,16 @@ function verifyQueue(todo){
     if(i>=todo.length) return Promise.resolve(st);
     var f=todo[i], netAt=_netErrors;
     return lookupTrack(f.info, f.duration).then(function(found){
+      /* Сомнительное совпадение перепроверяем в Discogs */
+      if(!found || found.score >= 0.8) return found;
+      return discogsConfirm(found.artist, found.title).then(function(ok){
+        if(ok){
+          found.score = Math.min(1, found.score + 0.1);
+          found.source = found.source + " +Discogs";
+        }
+        return found;
+      });
+    }).then(function(found){
       if(found){
         var same = norm(found.artist)===norm(f.info.artist) && norm(found.title)===norm(f.info.title);
         f.info.artist = found.artist || f.info.artist;
