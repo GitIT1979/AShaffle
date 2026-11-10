@@ -63,16 +63,12 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .ed{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--b);border-radius:6px;background:var(--c);color:var(--t);min-width:0}
 .ed.a{flex:0 0 46%}
 .ed.t{flex:1}
-.vt{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
-.vsum{font-size:12px;color:var(--m)}
-.req{font-size:12px;color:var(--m);margin:0 0 12px;line-height:1.5}
 .fl{max-height:340px}
 .pw{display:none;margin-top:12px}
 .pw.show{display:block}
 .pi{display:flex;justify-content:space-between;font-size:12px;color:var(--m);margin-bottom:6px}
 .pb{height:8px;background:var(--b);border-radius:4px;overflow:hidden}
 .pf{height:100%;background:linear-gradient(90deg,var(--g),var(--gd));width:0;transition:width .15s}
-.st{font-size:12.5px;color:var(--m);min-height:16px}
 h3{margin:0 0 10px;font-size:15px}
 .bg{display:inline-block;background:var(--gl);color:var(--gd);font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:600}
 .results{display:none}
@@ -97,7 +93,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v10.1</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v10.2</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -113,12 +109,7 @@ h3{margin:0 0 10px;font-size:15px}
   <button class="btn" id="clr" type="button">🗑 Очистить</button>
 </div>
 <div class="fl" id="list"></div>
-<div class="vt">
-  <span class="vsum" id="vsum"></span>
 </div>
-</div>
-
-<div class="req">Make this true! проверяет каждое название в интернете и возвращает треки в прежнем порядке; Ashuffle this! перемешивает уже исправленные треки.</div>
 
 <button class="big-btn mt" id="makeTrue" type="button">🪄 Make this true!</button>
 <button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
@@ -136,7 +127,6 @@ h3{margin:0 0 10px;font-size:15px}
 <div class="res-list" id="resList"></div>
 </div>
 
-<div class="st" id="st">Готов к работе</div>
 </div>
 
 <script>
@@ -1139,7 +1129,7 @@ function inspectEntry(e){
 /* ============================================================
    7. UI
    ============================================================ */
-function stt(m){$("st").textContent=m}
+function stt(m){ var el=$("st"); if(el) el.textContent=m; }
 function pshow(l){$("pw").classList.add("show");$("pl").textContent=l||"Обработка…";$("pp").textContent="0%";$("pf").style.width="0%"}
 function pup(d,t,l){var p=t>0?Math.round(d/t*100):0;$("pf").style.width=p+"%";$("pp").textContent=p+"%";$("pl").textContent=l||("Обработано "+d+" из "+t)}
 function phide(){$("pw").classList.remove("show")}
