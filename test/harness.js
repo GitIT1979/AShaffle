@@ -154,6 +154,7 @@ eq(api.cleanJunk("Song (Remix)"), "Song (Remix)", "ремикс оставляе
 eq(api.cleanJunk("Song (Live)"), "Song (Live)", "live оставляем");
 eq(api.dropVariants("Song (Live)"), "Song", "для поиска live убираем");
 eq(api.tokenNear("направл", "направление"), true, "усечённое слово совпадает");
+eq(api.tokenNear("мишел", "мишель"), true, "усечённый исполнитель совпадает");
 
 /* ---------- ZIP ---------- */
 (async function () {
