@@ -34,7 +34,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "readApeTags:readApeTags,readWmaTags:readWmaTags," +
   "untranslit:untranslit,tokenNear:tokenNear," +
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
-  "matchScore:matchScore," +
+  "matchScore:matchScore,cleanJunk:cleanJunk,dropVariants:dropVariants," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -144,6 +144,16 @@ ok(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 20
 eq(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 100), null, "MB: отсев по длительности");
 ok(api.matchScore("Dabro На часах ноль-ноль", "Dabro", "На часах ноль-ноль", 206, 206000) > 0.95, "оценка точного совпадения");
 ok(api.matchScore("Dabro На часах ноль-ноль", "Полина Гагарина", "Один в поле воин", 206, 206000) < 0.5, "чужой кандидат оценён ниже");
+
+/* ---------- чистка скобок ---------- */
+eq(api.cleanJunk("Song (Official Video)"), "Song", "убираем (Official Video)");
+eq(api.cleanJunk("Song (feat. X)"), "Song", "убираем (feat. X)");
+eq(api.cleanJunk("Song (Remastered 2011)"), "Song", "убираем (Remastered 2011)");
+eq(api.cleanJunk("Song - Topic"), "Song", "убираем хвост - Topic");
+eq(api.cleanJunk("Song (Remix)"), "Song (Remix)", "ремикс оставляем — это версия записи");
+eq(api.cleanJunk("Song (Live)"), "Song (Live)", "live оставляем");
+eq(api.dropVariants("Song (Live)"), "Song", "для поиска live убираем");
+eq(api.tokenNear("направл", "направление"), true, "усечённое слово совпадает");
 
 /* ---------- ZIP ---------- */
 (async function () {

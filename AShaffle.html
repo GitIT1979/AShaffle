@@ -97,7 +97,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v9.7</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v9.8</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузите файлы или папку, нажмите <b>🎲 Ashuffle this!</b> — программа сначала проверит каждое название в интернете, покажет результат, затем перемешает и переименует.</p>
 
@@ -182,10 +182,33 @@ function theme(t){
 /* ============================================================
    1. ЛОКАЛЬНЫЙ ПАРСЕР
    ============================================================ */
+/* Мусорные пометки в скобках: срезаем только когда точно понятно, что это не часть названия.
+   Варианты записи (live, remix, acoustic, instrumental, demo) остаются. */
+var _NOISE = {
+  official:1, video:1, audio:1, music:1, lyric:1, lyrics:1, visualizer:1, visualiser:1,
+  mv:1, "m/v":1, clip:1, teaser:1, trailer:1, premiere:1, topic:1,
+  hd:1, hq:1, uhd:1, "4k":1, "1080p":1, "720p":1,
+  explicit:1, clean:1, censored:1, remaster:1, remastered:1, deluxe:1, edition:1,
+  bonus:1, track:1, digital:1, mono:1, stereo:1, single:1, album:1, ep:1, ost:1, soundtrack:1,
+  "премьера":1, "клип":1, "видеоклип":1, "официальный":1, "официальное":1,
+  "видео":1, "саундтрек":1, "трек":1, "музыка":1
+};
+function _noiseInner(inner){
+  var t = String(inner).toLowerCase().replace(/[.,;:!?"'«»]/g, " ").replace(/\s+/g, " ").trim();
+  if(!t) return true;
+  if(/^(feat|ft|при уч)\s+/.test(t)) return true;
+  if(/^(prod|прод)(\s+by)?\s+/.test(t)) return true;
+  if(/^\d{4}$/.test(t)) return true;
+  if(/^\d{2,4}\s*(kbps|кбит)?$/.test(t)) return true;
+  var words = t.split(" ");
+  return words.every(function(w){ return _NOISE[w] || /^\d{4}$/.test(w); });
+}
 function cleanJunk(s){
-  return s
-    .replace(/\s*[\(\[]\s*(official\s*(video|audio|music\s*video)?|lyrics?|hd|hq|explicit|remaster(ed)?(\s*\d{4})?|deluxe(\s*edition)?|bonus\s*track)\s*[\)\]]/gi, "")
-    .replace(/\s*[\(\[]\s*(feat\.?|ft\.?|при\s*уч\.?)\s+[^\)\]]+[\)\]]/gi, "")
+  var out = String(s).replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
+    return _noiseInner(inner) ? "" : m;
+  });
+  return out
+    .replace(/\s+[-–—]\s*(topic|official\s*(video|audio|music\s*video)|lyrics?|hd|hq|remaster(ed)?|single|album)\s*$/gi, "")
     .replace(/\s*\([a-z0-9-]+\.[a-z]{2,}\)/gi, "")
     .replace(/\s+official\s+music\s+video\b/gi, "")
     .replace(/\s+music\s+video\b/gi, "")
@@ -193,9 +216,16 @@ function cleanJunk(s){
     .replace(/\s+official\s+audio\b/gi, "")
     .replace(/\s+lyric\s+video\b/gi, "")
     .replace(/\s+uuid[-\s][\w-]+/gi, "")
-    .replace(/\s*[-–—]\s*(official\s*(video|audio)|lyrics?|hd|hq|remaster(ed)?)\s*$/gi, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+/* Для поиска убираем и варианты записи: ищем песню, а версию выберет длительность */
+var _VARIANTS = { live:1, remix:1, acoustic:1, instrumental:1, extended:1, radio:1, edit:1, demo:1, cover:1, version:1 };
+function dropVariants(s){
+  return String(s).replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
+    var words = inner.toLowerCase().replace(/[.,;:!?"'«»]/g, " ").split(/\s+/).filter(Boolean);
+    return (words.length && words.every(function(w){ return _VARIANTS[w]; })) ? "" : m;
+  }).replace(/\s+/g, " ").trim();
 }
 /* Отрезает номер трека, но не съедает названия, начинающиеся с числа:
    «01 - Intro», «07. James Bond», «01 Song» — префикс;
@@ -338,7 +368,10 @@ function lev(a, b){
 function tokenNear(a, b){
   if(a === b) return true;
   var la=a.length, lb=b.length, min=Math.min(la,lb);
-  if(min < 4 || Math.abs(la-lb) > 2) return false;
+  if(min < 4) return false;
+  /* обрезанное имя файла: «направл» ↔ «направление» */
+  if(a.indexOf(b) === 0 || b.indexOf(a) === 0) return true;
+  if(Math.abs(la-lb) > 4) return false;
   return lev(a,b) <= (min >= 6 ? 2 : 1);
 }
 
@@ -350,7 +383,8 @@ function durOk(fileDur, candMs){
 }
 /* Оценка кандидата: покрытие запроса, чистота лишних слов, близость длительности */
 function matchScore(query, artist, title, fileDur, candMs){
-  var q = unique(tokens(query)), r = unique(tokens((artist||"") + " " + (title||"")));
+  /* Приводим обе стороны к латинице, иначе «Моя» и «Moya» не совпадут */
+  var q = unique(tokens(translit(query))), r = unique(tokens(translit((artist||"") + " " + (title||""))));
   var sigQ = q.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
   var sigR = r.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
   var near = function(a, b){ return a === b || tokenNear(a, b); };
@@ -425,7 +459,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.7 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.8 ( https://example.com/ashuffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -1092,7 +1126,6 @@ function statusBadge(info){
   if(info.status==="ok")     return '<span class="bd ok" title="Подтверждено: '+esc(info.source||"интернет")+'">✓ подтверждено'+pct+'</span>';
   if(info.status==="fixed")  return '<span class="bd fx" title="Исправлено по данным '+esc(info.source||"интернета")+'">✎ '+esc(info.source||"исправлено")+pct+'</span>';
   if(info.status==="manual") return '<span class="bd mn" title="Введено вручную">✎ вручную</span>';
-  if(info.status==="none")   return '<span class="bd nn" title="В интернете не найдено — останется разбор имени файла">? не найдено</span>';
   return "";
 }
 function folderOf(p){
@@ -1188,25 +1221,35 @@ function lookupTrack(info, dur){
   var term=(primary || raw).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
   if(!term) return Promise.resolve(null);
 
+  var qterm = dropVariants(term) || term;
+  var titleQ = dropVariants(t || "");
+  var shortTerm = ((a ? a + " " : "") + (t || "").split(/\s+/).slice(0, 2).join(" ")).trim();
+  if(shortTerm === qterm) shortTerm = "";
+  var cyr = /[а-яё]/i.test(term);
+
   var steps=[];
   /* Сначала точный запрос «исполнитель + название» — он даёт меньше мусора */
   if(primary) steps.push(function(){
-    return lookupMusicBrainzByArtistTitle(a, t).then(function(r){ return pickMusicBrainzResult(r, primary, dur); });
+    return lookupMusicBrainzByArtistTitle(a, titleQ || t).then(function(r){ return pickMusicBrainzResult(r, primary, dur); });
   });
-  if(term) steps.push(function(){
-    return lookupMusicBrainzByRecording(term).then(function(r){ return pickMusicBrainzResult(r, term, dur); });
+  /* Русские названия в MusicBrainz часто отсутствуют, у Apple каталог полнее */
+  if(cyr) steps.push(function(){ return lookupITunes(qterm, dur); });
+  if(qterm) steps.push(function(){
+    return lookupMusicBrainzByRecording(qterm).then(function(r){ return pickMusicBrainzResult(r, qterm, dur); });
   });
   /* Второй проход латиницей: «Дельфин» → «Delfin» */
-  var trq=translit(primary || term);
-  if(trq && trq !== (primary || term).toLowerCase()) steps.push(function(){
+  var trq=translit(qterm);
+  if(trq && trq !== qterm.toLowerCase()) steps.push(function(){
     return lookupMusicBrainzByRecording(trq).then(function(r){ return pickMusicBrainzResult(r, trq, dur); });
   });
   /* Третий проход кириллицей: «Dabro» → «дабро» */
-  var unq=untranslit(primary || term);
-  if(unq && unq !== (primary || term).toLowerCase() && /[а-яё]/.test(unq)) steps.push(function(){
+  var unq=untranslit(qterm);
+  if(unq && unq !== qterm.toLowerCase() && /[а-яё]/.test(unq)) steps.push(function(){
     return lookupMusicBrainzByRecording(unq).then(function(r){ return pickMusicBrainzResult(r, unq, dur); });
   });
-  steps.push(function(){ return lookupITunes(primary || term, dur); });
+  if(!cyr) steps.push(function(){ return lookupITunes(qterm, dur); });
+  /* Обрезанное имя файла («направл» вместо «направление») — пробуем короткий запрос */
+  if(shortTerm) steps.push(function(){ return lookupITunes(shortTerm, dur); });
 
   var i=0;
   function next(){
