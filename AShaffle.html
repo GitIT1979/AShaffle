@@ -101,7 +101,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.1</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.2</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -163,9 +163,8 @@ function $(i){return document.getElementById(i)}
 function ext(n){var m=n.match(/\.([^.]+)$/);return m?m[1].toLowerCase():""}
 function norm(s){
   if(!s) return "";
-  return s.normalize
-    ? s.normalize("NFKC").trim().toLowerCase().replace(/\s+/g," ")
-    : s.trim().toLowerCase().replace(/\s+/g," ");
+  var t = s.normalize ? s.normalize("NFKC") : s;
+  return t.trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g," ");
 }
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function fmtSize(b){if(b<1024)return b+" Б";if(b<1048576)return (b/1024).toFixed(1)+" КБ";return (b/1048576).toFixed(1)+" МБ"}
@@ -205,7 +204,11 @@ var _SITE_TAIL = "ru|pro|net|com|org|info|cc|me|io|tv|su|biz|fm|co|site|online|t
 function stripSiteJunk(s){
   var re1 = new RegExp("\\s*\\(\\s*[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9-]+)*\\.(" + _SITE_TAIL + ")\\s*\\)", "gi");
   var re2 = new RegExp("\\s*\\[\\s*[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9-]+)*\\.(" + _SITE_TAIL + ")\\s*\\]", "gi");
-  return String(s||"").replace(re1, "").replace(re2, "").replace(/\s{2,}/g, " ").trim();
+  return String(s||"")
+    .replace(re1, "")
+    .replace(re2, "")
+    .replace(new RegExp("[\\s._-]*[a-z0-9-]+\\.(" + _SITE_TAIL + ")\\s*$", "gi"), "")
+    .replace(/\s{2,}/g, " ").trim();
 }
 function cleanJunk(s){
   var out = String(s).replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
@@ -292,12 +295,22 @@ function trySplit(s){
   candidates.sort(function(a,b){ return b.score - a.score; });
   return candidates[0];
 }
+/* Мусорные префиксы в именах файлов: «11111 ABBA», «TVВиктор», «nai Наив», «AQF жанго» */
+function stripNamePrefix(s){
+  var out = String(s||"");
+  out = out.replace(/^\s*\d{3,}[\s_-]+/, "");
+  /* «TVВиктор», «UYTДжанго», «KR Виктор», «nai Наив» — но не «Egor Крид» */
+  out = out.replace(/^[A-Z]{2,6}(?=[А-ЯЁа-яё])/, "");
+  out = out.replace(/^[A-Z]{2,6}\s+(?=[А-ЯЁа-яё])/, "");
+  out = out.replace(/^[a-z]{2,6}\s+(?=[А-ЯЁа-яё])/, "");
+  return out.trim();
+}
 function parseTrackInfo(filename){
   var stem = filename.replace(/\.[^.]+$/, "");
-  var cleaned = stripTrackPrefix(stem);
+  var cleaned = stripNamePrefix(stripTrackPrefix(stem));
   cleaned = cleanJunk(cleaned);
   var split = trySplit(cleaned);
-  var artist = split.artist, title = split.title;
+  var artist = foldMixed(split.artist), title = foldMixed(split.title);
   var rawForSearch = split._raw || cleaned;
   title = cleanJunk(title);
   if(!/[a-zA-Zа-яА-ЯёЁ]/.test(title)) title = "unknown_track";
@@ -331,7 +344,9 @@ function unique(arr){
   return out;
 }
 /* Латинские буквы‑двойники внутри кириллических слов: Bетер → ветер, Mоя → моя */
-var _HOMO = { a:"а", b:"в", c:"с", e:"е", h:"н", k:"к", m:"м", o:"о", p:"р", t:"т", x:"х", y:"у" };
+var _HOMO = { a:"а", b:"в", c:"с", d:"д", e:"е", f:"ф", g:"г", h:"н", i:"и", j:"й",
+              k:"к", l:"л", m:"м", n:"н", o:"о", p:"р", q:"к", r:"р", s:"с", t:"т",
+              u:"у", v:"в", w:"в", x:"х", y:"у", z:"з" };
 function foldMixed(s){
   return String(s||"").replace(/[A-Za-zА-Яа-яЁё]+/g, function(w){
     if(!/[А-Яа-яЁё]/.test(w) || !/[A-Za-z]/.test(w)) return w;
@@ -1303,17 +1318,21 @@ function lookupTrack(info, dur){
 
   var steps=[];
   function pushMBPrecise(){
-    steps.push(function(){
+    steps.push(guardArtist(function(){
       return lookupMusicBrainzByArtistTitle(a, titleQ || t).then(function(r){ return pickMusicBrainzResult(r, primary, dur); });
-    });
+    }, a));
   }
   function pushMBTerm(term){
-    steps.push(function(){
+    steps.push(guardArtist(function(){
       return lookupMusicBrainzByRecording(term).then(function(r){ return pickMusicBrainzResult(r, term, dur); });
-    });
+    }, a && term.indexOf(a) === 0 ? a : ""));
   }
-  function pushDeezer(term){ steps.push(function(){ return lookupDeezer(term, dur); }); }
-  function pushITunes(term){ steps.push(function(){ return lookupITunes(term, dur); }); }
+  function pushDeezer(term){
+    steps.push(guardArtist(function(){ return lookupDeezer(term, dur); }, a && term.indexOf(a) === 0 ? a : ""));
+  }
+  function pushITunes(term){
+    steps.push(guardArtist(function(){ return lookupITunes(term, dur); }, a && term.indexOf(a) === 0 ? a : ""));
+  }
   /* Запрос без исполнителя не должен подменять исполнителя: сверяем с тем, что в файле */
   function guardArtist(fn, expected){
     return function(){
@@ -1399,7 +1418,12 @@ function verifyQueue(todo){
         var sameArtist = norm(found.artist) === norm(f.info.artist);
         var sameTitle  = norm(foundTitle)  === norm(f.info.title);
         var same = sameArtist && sameTitle;
-        f.info.artist = (sameArtist && f.info.artist) ? f.info.artist : (found.artist || f.info.artist);
+        /* Фит из исходного имени не теряем, если база подтвердила основного исполнителя */
+        var srcArtist = f.info.artist || "";
+        var featMatch = srcArtist.match(/^(.+?)\s+(?:feat\.?|ft\.?)\s+(.+)$/i);
+        var keepFeat = false;
+        if(featMatch && isGoodMatchFlex(featMatch[1], found.artist || "", "")) keepFeat = true;
+        f.info.artist = keepFeat ? srcArtist : ((sameArtist && f.info.artist) ? f.info.artist : (found.artist || f.info.artist));
         f.info.title  = (sameTitle  && f.info.title)  ? f.info.title  : (foundTitle  || f.info.title);
         f.info.source = found.source || "";
         f.info.score  = found.score || 0;
