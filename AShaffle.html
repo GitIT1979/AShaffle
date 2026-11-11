@@ -103,7 +103,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.6</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.8</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -316,7 +316,15 @@ function trySplit(s){
       candidates.push({ artist: m[1].replace(/_/g," ").trim(), title: m[2].replace(/_/g," ").trim(), score: 5 });
     }
   }
-  if(!candidates.length && (s.match(/-/g) || []).length >= 2){
+  /* Один дефис без пробелов: august-intelligency → august / intelligency */
+  var dashCount = (s.match(/-/g) || []).length;
+  if(!candidates.length && s.indexOf(" ") === -1 && dashCount === 1){
+    var dm = s.match(/^([a-zа-яё][a-zа-яё0-9']{1,20})-([A-Za-zА-Яа-яЁё0-9][^\s]{2,})$/);
+    if(dm){
+      candidates.push({ artist: dm[1].trim(), title: dm[2].trim(), score: 4, _raw: s });
+    }
+  }
+  if(!candidates.length && dashCount >= 2){
     var parts = s.split("-").map(function(x){return x.trim()}).filter(Boolean);
     if(parts.length >= 3){
       candidates.push({
@@ -338,6 +346,8 @@ function trySplit(s){
 function stripNamePrefix(s){
   var out = String(s||"");
   out = out.replace(/^\s*\d{3,}[\s_-]+/, "");
+  /* Языковые хвосты из имён файлов: august-intelligency-eng */
+  out = out.replace(/[-_](eng|rus|ru|en)$/i, "");
   /* «TVВиктор», «UYTДжанго», «KR Виктор», «nai Наив» — но не «Egor Крид» */
   out = out.replace(/^[A-Z]{2,6}(?=[А-ЯЁа-яё])/, "");
   out = out.replace(/^[A-Z]{2,6}\s+(?=[А-ЯЁа-яё])/, "");
@@ -1387,25 +1397,28 @@ function lookupTrack(info, dur){
   function pushMBPrecise(){
     steps.push(guardArtist(function(){
       return lookupMusicBrainzByArtistTitle(a, titleQ || t).then(function(r){ return pickMusicBrainzResult(r, primary, dur); });
-    }, a));
+    }, a, t));
   }
   function pushMBTerm(term){
     steps.push(guardArtist(function(){
       return lookupMusicBrainzByRecording(term).then(function(r){ return pickMusicBrainzResult(r, term, dur); });
-    }, a && term.indexOf(a) === 0 ? a : ""));
+    }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   function pushDeezer(term){
-    steps.push(guardArtist(function(){ return lookupDeezer(term, dur); }, a && term.indexOf(a) === 0 ? a : ""));
+    steps.push(guardArtist(function(){ return lookupDeezer(term, dur); }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   function pushITunes(term){
-    steps.push(guardArtist(function(){ return lookupITunes(term, dur); }, a && term.indexOf(a) === 0 ? a : ""));
+    steps.push(guardArtist(function(){ return lookupITunes(term, dur); }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   /* Запрос без исполнителя не должен подменять исполнителя: сверяем с тем, что в файле */
-  function guardArtist(fn, expected){
+  function guardArtist(fn, expected, expectedTitle){
     return function(){
       return fn().then(function(f){
         if(!f || !expected) return f;
-        return isGoodMatchFlex(expected, f.artist || "", "") ? f : null;
+        if(isGoodMatchFlex(expected, f.artist || "", "")) return f;
+        /* В каталоге бывает перепутано: артист = наше название, название = наш артист */
+        if(expectedTitle && isGoodMatchFlex(expected, f.title || "", "") && isGoodMatchFlex(expectedTitle, f.artist || "", "")) return f;
+        return null;
       });
     };
   }
