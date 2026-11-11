@@ -54,6 +54,7 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .bd.fx{color:#1d4ed8;background:var(--bll);border-color:transparent}
 .bd.nn{color:#b45309;background:#fef3c7;border-color:#fde68a}
 .bd.mn{color:#6d28d9;background:#ede9fe;border-color:transparent}
+button.bd{cursor:pointer;font:inherit;font-size:10.5px}
 .bd.tg{color:#0369a1;background:#e0f2fe;border-color:transparent}
 .dur{font-size:11px;color:var(--m);font-family:Consolas,monospace;margin-left:auto}
 .dir{font-size:11px;color:var(--m);font-family:Consolas,monospace;padding:0 6px;border-left:1px solid var(--b);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -101,7 +102,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.2</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.4</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -209,6 +210,35 @@ function stripSiteJunk(s){
     .replace(re2, "")
     .replace(new RegExp("[\\s._-]*[a-z0-9-]+\\.(" + _SITE_TAIL + ")\\s*$", "gi"), "")
     .replace(/\s{2,}/g, " ").trim();
+}
+/* «(feat. …)» в названии — не часть названия, исполнители уже есть отдельно */
+function stripFeat(s){
+  return String(s||"").replace(/\s*[\(\[]\s*(?:feat\.?|ft\.?|при\s*уч\.?)\s+[^\)\]]*[\)\]]/gi, "").replace(/\s{2,}/g, " ").trim();
+}
+/* Словарь переводов имён групп: technology → Технология */
+var _ALIASES = {
+  "technology": "Технология",
+  "nautilus": "Наутилус",
+  "nautilus pompilius": "Наутилус Помпилиус",
+  "korol i shut": "Король и Шут",
+  "dzhango": "Джанго",
+  "seryoga": "Серёга",
+  "naiv": "Наив",
+  "dolphin": "Дельфин",
+  "kino": "Кино",
+  "viktor tsoi": "Виктор Цой",
+  "viktor tsoy": "Виктор Цой",
+  "moya mishel": "Моя Мишель",
+  "zivert": "Зиверт",
+  "billi ailish": "Билли Айлиш"
+};
+function aliasFor(artist){
+  var k = String(artist||"").toLowerCase().replace(/\s+/g," ").trim();
+  if(!k) return "";
+  if(_ALIASES[k]) return _ALIASES[k];
+  var keys = Object.keys(_ALIASES);
+  for(var i=0;i<keys.length;i++){ if(k.indexOf(keys[i]) === 0) return _ALIASES[keys[i]]; }
+  return "";
 }
 function cleanJunk(s){
   var out = String(s).replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
@@ -540,7 +570,7 @@ function pickMusicBrainzResult(recordings, query, dur){
     var rec = recordings[i];
     if(!rec["artist-credit"] || !rec["artist-credit"].length) continue;
     var mbArtist = rec["artist-credit"][0].name;
-    var mbTitle  = rec.title;
+    var mbTitle  = stripFeat(rec.title);
     if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
     if(!durOk(dur, rec.length)) continue;
     if(!isGoodMatchFlex(query, mbArtist, mbTitle)) continue;
@@ -589,7 +619,7 @@ function lookupDeezer(term, dur){
       var s = matchScore(term, t.artist.name, t.title, dur, (t.duration || 0) * 1000);
       if(s > best + 1e-9 || (out && Math.abs(s - best) <= 1e-9 && String(t.title).length < out.title.length)){
         best = s;
-        out = { artist: t.artist.name, title: String(t.title).trim(), source: "Deezer", score: s };
+        out = { artist: t.artist.name, title: stripFeat(String(t.title).trim()), source: "Deezer", score: s };
       }
     });
     _dzCache[key] = out;
@@ -634,7 +664,7 @@ function lookupITunes(term, dur){
               if(!/[a-zA-Zа-яА-ЯёЁ]/.test(res.trackName)) continue;
               if(!durOk(dur, res.trackTimeMillis)) continue;
               if(!isGoodMatchFlex(term, res.artistName, res.trackName)) continue;
-              var cleanTitle = String(res.trackName).trim();
+              var cleanTitle = stripFeat(res.trackName);
               var sc = matchScore(term, res.artistName, res.trackName, dur, res.trackTimeMillis);
               if(sc > bestScore + 1e-9 || (out && Math.abs(sc - bestScore) <= 1e-9 && cleanTitle.length < out.title.length)){
                 bestScore = sc;
@@ -1247,6 +1277,7 @@ function rowHtml(f,i){
       '</div>'+
       '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
         (info.fromTags && info.status==="raw" ? '<span class="bd tg" title="Исполнитель и название взяты из тега файла">тег</span>' : '')+
+        (info.status==="none" ? '<button class="bd nn" data-act="edit" data-id="'+f.id+'" type="button" title="Ничего не нашлось — исправьте вручную">✎ исправить</button>' : '')+
         (dir ? '<span class="dir" title="'+esc(f.path)+'">'+esc(dir)+'</span>' : '')+
         (f.duration ? '<span class="dur">'+fmtDur(f.duration)+'</span>' : '')+
       '</div>'+
@@ -1368,6 +1399,16 @@ function lookupTrack(info, dur){
     pushDeezer(qterm);
     pushITunes(qterm);
   }
+  /* Известные переводы имён групп: technology → Технология */
+  var alias = aliasFor(a);
+  if(alias && alias !== a){
+    var aliasTerm = (alias + " " + (titleQ || t)).trim();
+    steps.push(function(){ return lookupDeezer(aliasTerm, dur); });
+    steps.push(function(){ return lookupITunes(aliasTerm, dur); });
+    steps.push(function(){
+      return lookupMusicBrainzByRecording(aliasTerm).then(function(r){ return pickMusicBrainzResult(r, aliasTerm, dur); });
+    });
+  }
   /* Обрезанное имя файла («направл» вместо «направление») — короткий запрос */
   if(shortTerm){ pushDeezer(shortTerm); pushITunes(shortTerm); }
   /* Неполный исполнитель: первое слово имени */
@@ -1423,6 +1464,13 @@ function verifyQueue(todo){
         var featMatch = srcArtist.match(/^(.+?)\s+(?:feat\.?|ft\.?)\s+(.+)$/i);
         var keepFeat = false;
         if(featMatch && isGoodMatchFlex(featMatch[1], found.artist || "", "")) keepFeat = true;
+        /* Если найденный исполнитель — часть исходного («Sean Paul» внутри «Imanbek & Sean Paul»), оставляем исходный */
+        var srcTok = unique(tokens(srcArtist));
+        var fndTok = unique(tokens(found.artist || ""));
+        var subset = fndTok.length > 0 && fndTok.every(function(w){
+          return srcTok.some(function(x){ return x === w || tokenNear(w, x); });
+        });
+        if(subset) keepFeat = true;
         f.info.artist = keepFeat ? srcArtist : ((sameArtist && f.info.artist) ? f.info.artist : (found.artist || f.info.artist));
         f.info.title  = (sameTitle  && f.info.title)  ? f.info.title  : (foundTitle  || f.info.title);
         f.info.source = found.source || "";
