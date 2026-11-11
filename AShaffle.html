@@ -102,7 +102,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.4</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.5</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -239,6 +239,12 @@ function aliasFor(artist){
   var keys = Object.keys(_ALIASES);
   for(var i=0;i<keys.length;i++){ if(k.indexOf(keys[i]) === 0) return _ALIASES[keys[i]]; }
   return "";
+}
+/** «(Bonus)», «(Remastered)» — не часть названия */
+function stripNoiseBrackets(s){
+  return String(s||"").replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
+    return _noiseInner(inner) ? "" : m;
+  }).replace(/\s{2,}/g, " ").trim();
 }
 function cleanJunk(s){
   var out = String(s).replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
@@ -382,7 +388,9 @@ function foldMixed(s){
     if(!/[А-Яа-яЁё]/.test(w) || !/[A-Za-z]/.test(w)) return w;
     return w.split("").map(function(ch){
       var low = ch.toLowerCase();
-      return Object.prototype.hasOwnProperty.call(_HOMO, low) ? _HOMO[low] : ch;
+      if(!Object.prototype.hasOwnProperty.call(_HOMO, low)) return ch;
+      var cyr = _HOMO[low];
+      return (ch !== ch.toLowerCase()) ? cyr.toUpperCase() : cyr;
     }).join("");
   });
 }
@@ -440,7 +448,7 @@ function tokenNear(a, b){
 }
 
 /* Допуск по длительности: ремастер или тишина в начале могут добавить пару секунд */
-var DUR_TOL = 6;
+var DUR_TOL = 10;
 function durOk(fileDur, candMs){
   if(!fileDur || !candMs) return true;
   return Math.abs(candMs/1000 - fileDur) <= DUR_TOL;
@@ -1455,7 +1463,7 @@ function verifyQueue(todo){
     }).then(function(found){
       if(found){
         /* Если имя отличается только регистром, оставляем написание из файла */
-        var foundTitle = stripSiteJunk(found.title || "");
+        var foundTitle = stripNoiseBrackets(stripSiteJunk(found.title || ""));
         var sameArtist = norm(found.artist) === norm(f.info.artist);
         var sameTitle  = norm(foundTitle)  === norm(f.info.title);
         var same = sameArtist && sameTitle;
