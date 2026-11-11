@@ -103,7 +103,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.8</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.9</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -353,6 +353,17 @@ function stripNamePrefix(s){
   out = out.replace(/^[A-Z]{2,6}\s+(?=[А-ЯЁа-яё])/, "");
   out = out.replace(/^[a-z]{2,6}\s+(?=[А-ЯЁа-яё])/, "");
   return out.trim();
+}
+/* Обратный разбор имени с тремя и более частями: «Категория - Название - Исполнитель» */
+function altParse(filename){
+  var stem = filename.replace(/\.[^.]+$/, "");
+  var cleaned = cleanJunk(stripNamePrefix(stripTrackPrefix(stem)));
+  var parts = cleaned.split(/\s+[-–—]\s+/).map(function(x){ return x.trim(); }).filter(Boolean);
+  if(parts.length < 3) return null;
+  var artist = parts[parts.length - 1];
+  var title = parts.slice(1, parts.length - 1).join(" - ");
+  if(!artist || !title) return null;
+  return { artist: foldMixed(artist), title: foldMixed(title), _raw: cleaned, score: 0 };
 }
 function parseTrackInfo(filename){
   var stem = filename.replace(/\.[^.]+$/, "");
@@ -1300,6 +1311,7 @@ function rowHtml(f,i){
       '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
         (info.fromTags && info.status==="raw" ? '<span class="bd tg" title="Исполнитель и название взяты из тега файла">тег</span>' : '')+
         (info.status==="none" ? '<button class="bd nn" data-act="edit" data-id="'+f.id+'" type="button" title="Ничего не нашлось — исправьте вручную">✎ исправить</button>' : '')+
+        (info.alt ? '<span class="bd" title="Имя прочитано с конца: исполнитель был последней частью">↔</span>' : '')+
         (dir ? '<span class="dir" title="'+esc(f.path)+'">'+esc(dir)+'</span>' : '')+
         (f.duration ? '<span class="dur">'+fmtDur(f.duration)+'</span>' : '')+
       '</div>'+
@@ -1489,6 +1501,15 @@ function verifyQueue(todo){
     if(i>=todo.length) return Promise.resolve(st);
     var f=todo[i], netAt=_netErrors;
     return lookupTrack(f.info, f.duration).then(function(found){
+      if(found) return found;
+      /* Если в имени три и более части, пробуем прочитать его с конца */
+      var alt = altParse(f.name);
+      if(!alt) return null;
+      return lookupTrack(alt, f.duration).then(function(f2){
+        if(f2) f2.alt = true;
+        return f2;
+      });
+    }).then(function(found){
       /* Латиницу пробуем заменить кириллическим написанием того же трека */
       return preferCyrillic(found, f.duration, f.info.artist);
     }).then(function(found){
@@ -1525,6 +1546,7 @@ function verifyQueue(todo){
         f.info.source = found.source || "";
         f.info.score  = found.score || 0;
         f.info.status = same ? "ok" : "fixed";
+        f.info.alt = !!found.alt;
         if(same) st.confirmed++; else st.changed++;
       } else {
         f.info.status="none";

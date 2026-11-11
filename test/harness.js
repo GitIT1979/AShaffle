@@ -36,6 +36,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "matchScore:matchScore,cleanJunk:cleanJunk,dropVariants:dropVariants," +
   "foldMixed:foldMixed,collapseDoubles:collapseDoubles,stripSiteJunk:stripSiteJunk," +
+  "altParse:altParse," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -155,6 +156,10 @@ eq(api.cleanJunk("Song (Remix)"), "Song (Remix)", "ремикс оставляе
 eq(api.cleanJunk("Song (Live)"), "Song (Live)", "live оставляем");
 eq(api.dropVariants("Song (Live)"), "Song", "для поиска live убираем");
 eq(api.tokenNear("направл", "направление"), true, "усечённое слово совпадает");
+const ap = api.altParse("Категория - Лесник - Король и Шут.mp3");
+eq(ap && ap.artist, "Король и Шут", "обратный разбор: исполнитель в конце");
+eq(ap && ap.title, "Лесник", "обратный разбор: название в середине");
+eq(api.altParse("Король и Шут - Лесник.mp3"), null, "двух частей недостаточно для обратного разбора");
 eq(api.tokenNear("мишел", "мишель"), true, "усечённый исполнитель совпадает");
 eq(api.isGoodMatchFlex("Марат Мэлхарт", "ЧУДОBRO", ""), false, "чужой исполнитель не проходит проверку");
 eq(api.isGoodMatchFlex("Моя Мишел", "Моя Мишель", ""), true, "усечённый исполнитель проходит");
