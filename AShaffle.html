@@ -46,6 +46,7 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .fi .fmain{flex:1;min-width:0}
 .fi .top{display:flex;align-items:center;gap:8px;min-width:0}
 .fi .bot{display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap}
+.fi.playing{background:var(--gl)}
 .ic{background:none;border:1px solid transparent;color:var(--m);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px;line-height:1}
 .ic:hover{background:var(--h);color:var(--t)}
 .ic.rm:hover{color:var(--d)}
@@ -102,7 +103,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.5</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.6</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -118,6 +119,7 @@ h3{margin:0 0 10px;font-size:15px}
   <button class="btn" id="clr" type="button">🗑 Очистить</button>
 </div>
 <div class="fl" id="list"></div>
+<audio id="player" preload="none"></audio>
 </div>
 
 <div class="actions" id="actions">
@@ -155,6 +157,7 @@ var cancelVerify=false;
 var _multiDir=false;
 var madeTrue=false;
 var confirmed=false;
+var playingId=0, playingUrl="";
 
 var CAN_PICK_DIR  = typeof window.showDirectoryPicker === "function";
 var CAN_PICK_FILE = typeof window.showSaveFilePicker  === "function";
@@ -1274,10 +1277,11 @@ function rowHtml(f,i){
   }
   var label=(info.artist?info.artist+" — ":"")+(info.title||"unknown_track");
   var dir = _multiDir ? folderOf(f.path) : "";
-  return '<div class="fi" data-id="'+f.id+'">'+
+  return '<div class="fi'+(playingId===f.id?' playing':'')+'" data-id="'+f.id+'">'+
     '<span class="n">'+idx+'</span>'+
     '<div class="fmain">'+
       '<div class="top">'+
+        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать">'+(playingId===f.id?'⏸':'▶')+'</button>'+
         '<span class="nm" title="'+esc(f.path || f.name)+'">'+esc(f.name)+'</span>'+
         '<span class="ex">'+e+'</span>'+
         '<button class="ic" data-act="edit" data-id="'+f.id+'" type="button" title="Исправить исполнителя и название">✎</button>'+
@@ -1290,6 +1294,30 @@ function rowHtml(f,i){
         (f.duration ? '<span class="dur">'+fmtDur(f.duration)+'</span>' : '')+
       '</div>'+
     '</div></div>';
+}
+
+/* Прослушивание прямо в списке */
+function stopPlayback(){
+  var a=$("player");
+  if(a){ try{ a.pause(); a.removeAttribute("src"); a.load(); }catch(e){} }
+  if(playingUrl){ try{ URL.revokeObjectURL(playingUrl); }catch(e){} }
+  playingUrl=""; playingId=0;
+}
+function togglePlay(id){
+  var f=null;
+  for(var i=0;i<files.length;i++) if(files[i].id===id){ f=files[i]; break; }
+  if(!f) return;
+  if(playingId===id){ stopPlayback(); draw(); return; }
+  stopPlayback();
+  var a=$("player");
+  if(!a) return;
+  playingUrl=URL.createObjectURL(f.file);
+  playingId=id;
+  a.src=playingUrl;
+  a.onended=function(){ stopPlayback(); draw(); };
+  var p=a.play();
+  if(p && p.catch) p.catch(function(){ stt("Не удалось воспроизвести этот файл."); stopPlayback(); draw(); });
+  draw();
 }
 
 function draw(){
@@ -1608,6 +1636,7 @@ function startRename(){
 /* Переход к списку результатов: рабочий список и кнопки скрываются с эффектом */
 function confirmResults(){
   if(!madeTrue || confirmed || busy || verifying || !results.length) return;
+  stopPlayback();
   var fc=$("filesCard"), acts=$("actions"), dz=$("dz");
   if(fc) fc.classList.add("anim-out");
   if(acts) acts.classList.add("anim-out");
@@ -2003,6 +2032,7 @@ $("list").addEventListener("click", function(e){
   var idx=files.findIndex(function(x){ return x.id===id; });
   if(idx<0) return;
   if(act==="edit"){ editingId=id; draw(); var f0=$("ed-artist"); if(f0) f0.focus(); return; }
+  if(act==="play"){ togglePlay(id); return; }
   if(act==="cancel"){ editingId=0; draw(); return; }
   if(act==="reset"){
     var p0=files[idx].parsed;
@@ -2027,6 +2057,7 @@ $("list").addEventListener("click", function(e){
   }
   if(act==="rm"){
     if(editingId===id) editingId=0;
+    if(playingId===id) stopPlayback();
     madeTrue=false; confirmed=false;
     files.splice(idx,1);
     resetResults();
@@ -2049,6 +2080,7 @@ $("fdir").addEventListener("change",function(e){
 $("clr").addEventListener("click",function(){
   if(busy || verifying) return;
   files=[];results=[];dirty=false;editingId=0;madeTrue=false;confirmed=false;
+  stopPlayback();
   draw();drawResults();$("results").classList.remove("show");phide();
   stt("Очищено"); updateGoBtn();
 });
