@@ -57,11 +57,13 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .bd.mn{color:#6d28d9;background:#ede9fe;border-color:transparent}
 button.bd{cursor:pointer;font:inherit;font-size:10.5px}
 .bd.tg{color:#0369a1;background:#e0f2fe;border-color:transparent}
+.bd.alt{color:#7c2d12;background:#ffedd5;border-color:#fed7aa;font-weight:600}
 .dur{font-size:11px;color:var(--m);font-family:Consolas,monospace;margin-left:auto}
 .dir{font-size:11px;color:var(--m);font-family:Consolas,monospace;padding:0 6px;border-left:1px solid var(--b);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 [data-theme=dark] .bd.tg{color:#7dd3fc;background:#0c2a3a;border-color:transparent}
 [data-theme=dark] .bd.nn{color:#fbbf24;background:#3a2e1a;border-color:#5a4620}
 [data-theme=dark] .bd.mn{color:#c4b5fd;background:#2e2450;border-color:transparent}
+[data-theme=dark] .bd.alt{color:#fdba74;background:#3a2210;border-color:#5c3418}
 .ed{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--b);border-radius:6px;background:var(--c);color:var(--t);min-width:0}
 .ed.a{flex:0 0 46%}
 .ed.t{flex:1}
@@ -103,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.15</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.16</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -574,7 +576,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/9.11 ( https://example.com/ashuffle )" } }, 15000)
+  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/11.16 ( https://github.com/GitIT1979/AShaffle )" } }, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -613,9 +615,53 @@ function lookupMusicBrainzByArtistTitle(artist, title){
   if(title)  parts.push('recording:"' + title.replace(/"/g,"") + '"');
   return _mbRequest(parts.join(" AND "));
 }
+/* ---------- варианты одного названия ---------- */
+/* Несколько песен могут называться одинаково и совпадать по длительности.
+   Собираем всех подходящих кандидатов, лучшего берём сразу, остальные — на выбор. */
+function altsPush(list, cand){
+  if(!cand || !cand.artist || !cand.title) return;
+  var k = norm(cand.artist) + "|" + norm(cand.title);
+  for(var i=0;i<list.length;i++){
+    if(norm(list[i].artist) + "|" + norm(list[i].title) === k){
+      if((cand.score||0) > (list[i].score||0)) list[i] = cand;
+      return;
+    }
+  }
+  list.push(cand);
+}
+function sortAlts(list, limit){
+  return list.slice().sort(function(x,y){
+    var d = (y.score||0) - (x.score||0);
+    if(Math.abs(d) > 1e-9) return d;
+    return (x.title||"").length - (y.title||"").length;
+  }).slice(0, limit || 5).map(function(c){
+    return { artist:c.artist, title:c.title, source:c.source, score:c.score || 0, dur:c.dur || 0 };
+  });
+}
+function mergeAlts(list, more){
+  var out = (list || []).slice();
+  (more || []).forEach(function(c){ altsPush(out, c); });
+  return sortAlts(out);
+}
+/* Выбранный вариант — всегда первым, остальные подряд */
+function altsFor(chosen, extra, fileDur){
+  var list = [];
+  altsPush(list, { artist: chosen.artist, title: chosen.title, source: chosen.source, score: chosen.score || 0, dur: fileDur || 0 });
+  (extra || []).forEach(function(c){ altsPush(list, c); });
+  var sorted = sortAlts(list, 6);
+  var key = norm(chosen.artist) + "|" + norm(chosen.title);
+  var rest = [], self = null;
+  sorted.forEach(function(c){
+    if(norm(c.artist) + "|" + norm(c.title) === key) self = c;
+    else rest.push(c);
+  });
+  if(!self) self = { artist: chosen.artist, title: chosen.title, source: chosen.source, score: chosen.score || 0, dur: fileDur || 0 };
+  self.isSelf = true;
+  return [self].concat(rest);
+}
 function pickMusicBrainzResult(recordings, query, dur){
   if(!recordings || !recordings.length) return null;
-  var best = null, bestScore = -1;
+  var best = null, bestScore = -1, picked = [];
   for(var i=0;i<recordings.length;i++){
     var rec = recordings[i];
     if(!rec["artist-credit"] || !rec["artist-credit"].length) continue;
@@ -627,11 +673,13 @@ function pickMusicBrainzResult(recordings, query, dur){
     if(!isGoodMatchFlex(query, mbArtist, mbTitle)) continue;
     var cleanTitle = String(mbTitle).trim();
     var s = matchScore(query, mbArtist, mbTitle, dur, rec.length);
+    altsPush(picked, { artist: mbArtist, title: cleanTitle, source: "MusicBrainz", score: s, dur: rec.length || 0 });
     if(s > bestScore + 1e-9 || (best && Math.abs(s - bestScore) <= 1e-9 && cleanTitle.length < best.title.length)){
       bestScore = s;
       best = { artist: mbArtist, title: cleanTitle, source: "MusicBrainz", score: s };
     }
   }
+  if(best) best.alts = sortAlts(picked);
   return best;
 }
 var _itCache = {}, _lastITRequest = 0;
@@ -658,11 +706,11 @@ function _jsonp(url, cbParam, timeoutMs){
 }
 function lookupDeezer(term, dur, loose){
   if(!term) return Promise.resolve(null);
-  var key = "dz|" + Math.round(dur||0) + "|" + term.toLowerCase();
+  var key = "dz|" + Math.round(dur||0) + "|" + term.toLowerCase() + (loose ? "|L" : "");
   if(Object.prototype.hasOwnProperty.call(_dzCache, key)) return Promise.resolve(_dzCache[key]);
   var url = "https://api.deezer.com/search?q=" + encodeURIComponent(term) + "&limit=5&output=jsonp";
   return _jsonp(url, "callback", 10000).then(function(json){
-    var out = null, best = -1;
+    var out = null, best = -1, picked = [];
     ((json && json.data) || []).forEach(function(t){
       if(!t || !t.title || !t.artist || !t.artist.name) return;
       if(isPlaceholder(t.artist.name) || isPlaceholder(t.title)) return;
@@ -670,11 +718,14 @@ function lookupDeezer(term, dur, loose){
       var m = loose ? isGoodMatchLoose(term, t.artist.name, t.title) : isGoodMatchFlex(term, t.artist.name, t.title);
       if(!m) return;
       var s = matchScore(term, t.artist.name, t.title, dur, (t.duration || 0) * 1000);
-      if(s > best + 1e-9 || (out && Math.abs(s - best) <= 1e-9 && String(t.title).length < out.title.length)){
+      var cand = { artist: t.artist.name, title: stripFeat(String(t.title).trim()), source: "Deezer", score: s, dur: (t.duration || 0) * 1000 };
+      altsPush(picked, cand);
+      if(s > best + 1e-9 || (out && Math.abs(s - best) <= 1e-9 && cand.title.length < out.title.length)){
         best = s;
-        out = { artist: t.artist.name, title: stripFeat(String(t.title).trim()), source: "Deezer", score: s };
+        out = { artist: cand.artist, title: cand.title, source: "Deezer", score: s };
       }
     });
+    if(out) out.alts = sortAlts(picked);
     _dzCache[key] = out;
     return out;
   }).catch(function(){ _dzCache[key] = null; _netErrors++; return null; });
@@ -687,7 +738,7 @@ function discogsConfirm(artist, title){
   var key = "dc|" + q.toLowerCase();
   if(Object.prototype.hasOwnProperty.call(_dcCache, key)) return Promise.resolve(_dcCache[key]);
   return _fetchT("https://api.discogs.com/database/search?type=release&per_page=5&q=" + encodeURIComponent(q),
-                 { headers: { "User-Agent": "Ashuffle/9.11 ( https://example.com/ashuffle )" } }, 10000)
+                 { headers: { "User-Agent": "Ashuffle/11.16 ( https://github.com/GitIT1979/AShaffle )" } }, 10000)
     .then(function(r){ if(!r.ok) throw new Error("Discogs " + r.status); return r.json(); })
     .then(function(j){
       var ok = ((j && j.results) || []).some(function(x){ return isGoodMatchFlex(q, x.title || "", ""); });
@@ -699,7 +750,7 @@ function discogsConfirm(artist, title){
 function lookupITunes(term, dur, loose){
   if(!CAN_ITUNES) return Promise.resolve(null);
   if(!term) return Promise.resolve(null);
-  var key = "it|" + Math.round(dur||0) + "|" + term.toLowerCase();
+  var key = "it|" + Math.round(dur||0) + "|" + term.toLowerCase() + (loose ? "|L" : "");
   if(Object.prototype.hasOwnProperty.call(_itCache, key)) return Promise.resolve(_itCache[key]);
   var now = Date.now(), wait = Math.max(0, 3200 - (now - _lastITRequest));
   return new Promise(function(resolve){
@@ -709,7 +760,7 @@ function lookupITunes(term, dur, loose){
       _fetchT(url, null, 12000)
         .then(function(r){ if(!r.ok) throw new Error("iTunes " + r.status); return r.json(); })
         .then(function(data){
-          var out = null, bestScore = -1;
+          var out = null, bestScore = -1, picked = [];
           if(data.resultCount && data.results){
             for(var i=0;i<data.results.length;i++){
               var res = data.results[i];
@@ -721,12 +772,15 @@ function lookupITunes(term, dur, loose){
               if(!m2) continue;
               var cleanTitle = stripFeat(res.trackName);
               var sc = matchScore(term, res.artistName, res.trackName, dur, res.trackTimeMillis);
+              var cand2 = { artist: res.artistName, title: cleanTitle, source: "iTunes", score: sc, dur: res.trackTimeMillis || 0 };
+              altsPush(picked, cand2);
               if(sc > bestScore + 1e-9 || (out && Math.abs(sc - bestScore) <= 1e-9 && cleanTitle.length < out.title.length)){
                 bestScore = sc;
-                out = { artist: res.artistName, title: cleanTitle, source: "iTunes", score: sc };
+                out = { artist: cand2.artist, title: cand2.title, source: "iTunes", score: sc };
               }
             }
           }
+          if(out) out.alts = sortAlts(picked);
           _itCache[key] = out; resolve(out);
         })
         .catch(function(){ _itCache[key] = null; _netErrors++; resolve(null); });
@@ -1328,6 +1382,12 @@ function folderOf(p){
   var parts = String(p).split("/");
   return parts.length > 1 ? parts[parts.length - 2] : "";
 }
+function altTip(info){
+  var l = info.alts || [];
+  var s = "Есть варианты — нажмите, чтобы сменить:\n";
+  l.forEach(function(c, k){ s += (k+1) + ") " + c.artist + " — " + c.title + (c.source ? " (" + c.source + ")" : "") + "\n"; });
+  return s.replace(/\n$/, "");
+}
 function rowHtml(f,i){
   var info=f.info, e=ext(f.name).toUpperCase();
   var idx=String(i+1).padStart(3,"0")+".";
@@ -1359,6 +1419,7 @@ function rowHtml(f,i){
         '<button class="ic rm" data-act="rm" data-id="'+f.id+'" type="button" title="Убрать из списка">✕</button>'+
       '</div>'+
       '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
+        (info.alts && info.alts.length > 1 ? '<button class="bd alt" data-act="alt" data-id="'+f.id+'" type="button" title="'+esc(altTip(info))+'" >⇄ '+((info.altIdx||0)+1)+'/'+info.alts.length+'</button>' : '')+
         (info.fromTags && info.status==="raw" ? '<span class="bd tg" title="Исполнитель и название взяты из тега файла">тег</span>' : '')+
         (info.status==="none" ? '<button class="bd nn" data-act="edit" data-id="'+f.id+'" type="button" title="Ничего не нашлось — исправьте вручную">✎ исправить</button>' : '')+
         (info.alt ? '<span class="bd" title="Имя прочитано с конца: исполнитель был последней частью">↔</span>' : '')+
@@ -1607,6 +1668,9 @@ function verifyQueue(todo){
         f.info.score  = found.score || 0;
         f.info.status = same ? "ok" : "fixed";
         f.info.alt = !!found.alt;
+        /* Все подходящие варианты: лучший уже выбран, остальные — на случай ошибки */
+        f.info.alts = altsFor({ artist:f.info.artist, title:f.info.title, source:f.info.source, score:f.info.score }, found.alts, f.duration);
+        f.info.altIdx = 0;
         if(same) st.confirmed++; else st.changed++;
       } else {
         f.info.status="none";
@@ -1644,9 +1708,10 @@ function preferCyrillic(found, dur, sourceArtist){
   if(!/[а-яё]/.test(guess)) return Promise.resolve(found);
   var term = (guess + " " + (found.title || "")).trim();
   return lookupDeezer(term, dur).then(function(alt){
-    if(alt && alt.artist && /[А-Яа-яЁё]/.test(alt.artist)) return alt;
+    if(alt && alt.artist && /[А-Яа-яЁё]/.test(alt.artist)){ alt.alts = mergeAlts(alt.alts, found.alts); return alt; }
     return lookupITunes(term, dur).then(function(alt2){
-      return (alt2 && alt2.artist && /[А-Яа-яЁё]/.test(alt2.artist)) ? alt2 : found;
+      if(alt2 && alt2.artist && /[А-Яа-яЁё]/.test(alt2.artist)){ alt2.alts = mergeAlts(alt2.alts, found.alts); return alt2; }
+      return found;
     });
   }).catch(function(){ return found; });
 }
@@ -2129,6 +2194,22 @@ $("list").addEventListener("click", function(e){
   if(idx<0) return;
   if(act==="edit"){ editingId=id; draw(); var f0=$("ed-artist"); if(f0) f0.focus(); return; }
   if(act==="play"){ togglePlay(id); return; }
+  /* Смена варианта: одно и то же название у разных исполнителей */
+  if(act==="alt"){
+    var inf=files[idx].info, al=inf.alts||[];
+    if(al.length<2) return;
+    var k=((inf.altIdx||0)+1)%al.length, c=al[k];
+    inf.altIdx=k;
+    inf.artist=c.artist; inf.title=c.title;
+    inf.source=c.source||""; inf.score=c.score||0;
+    if(inf.status==="none") inf.status="fixed";
+    confirmed=false; resetResults();
+    refreshRow(files[idx]); updateGoBtn();
+    stt("Вариант "+(k+1)+" из "+al.length+": "+c.artist+" — "+c.title);
+    /* Если имена уже собраны — пересобираем с новым вариантом */
+    if(madeTrue) startRename();
+    return;
+  }
   if(act==="cancel"){ editingId=0; draw(); return; }
   if(act==="reset"){
     var p0=files[idx].parsed;
@@ -2145,6 +2226,7 @@ $("list").addEventListener("click", function(e){
     files[idx].info.artist=aVal;
     files[idx].info.title=tVal;
     files[idx].info.status="manual";
+    files[idx].info.alts=null; files[idx].info.altIdx=0;
     files[idx].info.source="";
     madeTrue=false; confirmed=false;
     editingId=0; dirty=true; resetResults(); draw();

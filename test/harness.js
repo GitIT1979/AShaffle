@@ -36,7 +36,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "isGoodMatchFlex:isGoodMatchFlex,pickMusicBrainzResult:pickMusicBrainzResult," +
   "matchScore:matchScore,cleanJunk:cleanJunk,dropVariants:dropVariants," +
   "foldMixed:foldMixed,collapseDoubles:collapseDoubles,stripSiteJunk:stripSiteJunk," +
-  "altParse:altParse," +
+  "altParse:altParse,altsPush:altsPush,sortAlts:sortAlts,altsFor:altsFor," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -194,6 +194,25 @@ parseCases.forEach(function(c){
   eq(p.artist, c[1], "разбор исполнителя: " + c[0]);
   eq(p.title, c[2], "разбор названия: " + c[0]);
 });
+
+/* ---------- варианты одного названия ---------- */
+{
+  const l = [];
+  api.altsPush(l, { artist: "25/17", title: "Холодная весна", source: "Deezer", score: 0.9 });
+  api.altsPush(l, { artist: "Джанго", title: "Холодная весна", source: "Deezer", score: 0.85 });
+  api.altsPush(l, { artist: "Джанго", title: "Холодная весна", source: "iTunes", score: 0.95 });
+  eq(l.length, 2, "дубликаты вариантов склеиваются");
+  eq(l[1].score, 0.95, "от дубликата остаётся лучший балл");
+
+  const sorted = api.sortAlts(l);
+  eq(sorted[0].artist, "Джанго", "варианты сортируются по баллу");
+
+  const a = api.altsFor({ artist: "25/17", title: "Холодная весна", source: "Deezer", score: 0.9 }, l, 186700);
+  eq(a.length, 2, "выбранный плюс альтернатива");
+  eq(a[0].artist, "25/17", "выбранный вариант всегда первый");
+  eq(a[0].isSelf, true, "первый помечен как выбранный");
+  eq(a[1].artist, "Джанго", "второй — альтернатива");
+}
 
 /* ---------- ZIP ---------- */
 (async function () {
