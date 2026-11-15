@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.26</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.27</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1599,6 +1599,12 @@ function tailOk(found, fileWords){
     return pool.some(function(x){ return x === w || tokenNear(w, x); });
   });
 }
+/* Одиночная буква прилипла к имени: «MДжанго» → «Джанго» */
+function shaveGluedLetter(artist){
+  var s = String(artist||"");
+  var out = s.replace(/^[A-Za-zА-ЯЁ](?=[А-ЯЁ])/, "");
+  return (out !== s && out.length > 1) ? out : "";
+}
 function lookupTrack(info, dur){
   /* Латинские двойники вычищаем у любых входных данных, не только из имени файла */
   var a=foldMixed(info.artist||""), t=foldMixed(info.title||""), raw=foldMixed(info._raw||"");
@@ -1679,6 +1685,18 @@ function lookupTrack(info, dur){
       steps.push(function(){
         return lookupMusicBrainzByRecording(aliasTerm).then(function(r){ return pickMusicBrainzResult(r, aliasTerm, dur); });
       });
+    }
+  }
+  /* Одиночная буква прилипла к имени: «MДжанго» → «Джанго» */
+  var shaved = shaveGluedLetter(a);
+  if(shaved){
+    var shTerm = (shaved + " " + (titleQ || t)).replace(/\s+/g, " ").trim();
+    if(shTerm.toLowerCase() !== qterm.toLowerCase()){
+      steps.push(guardArtist(function(){ return lookupDeezer(shTerm, dur); }, shaved, titleQ || t));
+      steps.push(guardArtist(function(){ return lookupITunes(shTerm, dur); }, shaved, titleQ || t));
+      steps.push(guardArtist(function(){
+        return lookupMusicBrainzByRecording(shTerm).then(function(r){ return pickMusicBrainzResult(r, shTerm, dur); });
+      }, shaved, titleQ || t));
     }
   }
   /* Второй проход латиницей: «Дельфин» → «Delfin» */

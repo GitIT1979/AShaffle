@@ -41,6 +41,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "creditKey:creditKey,isGoodMatch:isGoodMatch,tailOk:tailOk,aliasFor:aliasFor," +
   "aliasSplit:aliasSplit,nameExact:nameExact,durOkExact:durOkExact," +
   "pullCreditFromTitle:pullCreditFromTitle,creditGaps:creditGaps," +
+  "shaveGluedLetter:shaveGluedLetter," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -203,8 +204,13 @@ parseCases.forEach(function(c){
   eq(p.title, c[2], "разбор названия: " + c[0]);
 });
 
-/* ---------- кредит, застрявший в названии ---------- */
-{
+/* ---------- кредит, застрявший в названии ---------- */{
+  eq(api.shaveGluedLetter("MДжанго"), "Джанго", "одиночная латинская буква срезана");
+  eq(api.shaveGluedLetter("МДжанго"), "Джанго", "одиночная кириллическая буква срезана");
+  eq(api.shaveGluedLetter("Джанго"), "", "нормальное имя не трогаем");
+  eq(api.shaveGluedLetter("Ёлка"), "", "одна буква в начале имени — не мусор");
+  eq(api.shaveGluedLetter("G-Eazy"), "", "латиница с дефисом не трогаем");
+
   const pc = api.pullCreditFromTitle("g-eazy", "and halsey-him and i");
   eq(pc && pc.artist, "g-eazy and halsey", "продолжение исполнителя возвращено");
   eq(pc && pc.title, "him and i", "название очищено");
