@@ -76,7 +76,10 @@ button.bd{cursor:pointer;font:inherit;font-size:10.5px}
 .fl{max-height:340px}
 .pw{display:none;margin-top:12px}
 .pw.show{display:block}
-.pi{display:flex;justify-content:space-between;font-size:12px;color:var(--m);margin-bottom:6px}
+.pi{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12px;color:var(--m);margin-bottom:6px}
+.pi #pl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pi #pp{flex:0 0 auto;font-variant-numeric:tabular-nums}
+.fi.processing{box-shadow:inset 3px 0 0 #f59e0b;background:rgba(245,158,11,.10);transition:background .2s ease}
 .pb{height:8px;background:var(--b);border-radius:4px;overflow:hidden}
 .pf{height:100%;background:linear-gradient(90deg,var(--g),var(--gd));width:0;transition:width .15s}
 h3{margin:0 0 10px;font-size:15px}
@@ -111,7 +114,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.37</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.38</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1505,6 +1508,18 @@ function inspectEntry(e){
 /* ============================================================
    7. UI
    ============================================================ */
+/* Подсветка строки, которую обрабатываем прямо сейчас */
+function markProcessing(f){
+  var L=$("list"); if(!L || !L.querySelector) return;
+  var prev=L.querySelector(".fi.processing");
+  if(prev) prev.classList.remove("processing");
+  if(!f) return;
+  var el=L.querySelector('.fi[data-id="'+f.id+'"]');
+  if(el){
+    el.classList.add("processing");
+    if(el.scrollIntoView) el.scrollIntoView({ block:"nearest" });
+  }
+}
 function stt(m){
   var el=$("st"); if(!el) return;
   el.textContent=m;
@@ -1512,8 +1527,7 @@ function stt(m){
   if(stt._t) clearTimeout(stt._t);
   stt._t = setTimeout(function(){ el.classList.remove("show"); }, 3200);
 }
-function pshow(l){$("pw").classList.add("show");$("pl").textContent=l||"Обработка…";$("pp").textContent="0%";$("pf").style.width="0%"}
-function pup(d,t,l){var p=t>0?Math.round(d/t*100):0;$("pf").style.width=p+"%";$("pp").textContent=p+"%";$("pl").textContent=l||("Обработано "+d+" из "+t)}
+function pshow(l){$("pw").classList.add("show");$("pl").textContent=l||"Обработка…";$("pp").textContent="0%";$("pf").style.width="0%"}function pup(d,t,l){var p=t>0?Math.round(d/t*100):0;$("pf").style.width=p+"%";$("pp").textContent=p+"%";$("pl").textContent=l||("Обработано "+d+" из "+t)}
 function phide(){$("pw").classList.remove("show")}
 
 function updateGoBtn(){
@@ -1918,6 +1932,8 @@ function verifyQueue(todo){
     if(cancelVerify){ st.cancelled=true; return Promise.resolve(st); }
     if(i>=todo.length) return Promise.resolve(st);
     var f=todo[i], netAt=_netErrors;
+    markProcessing(f);
+    pup(i, todo.length, "Проверяю "+(i+1)+" из "+todo.length+": "+f.name);
     return lookupTrack(f.info, f.duration).then(function(found){
       if(found) return found;
       /* Если в имени три и более части, пробуем прочитать его с конца */
@@ -2001,7 +2017,6 @@ function verifyQueue(todo){
       i++;
       refreshRow(f);
       if(i%5===0) updateGoBtn();
-      pup(i, todo.length, "Проверка: "+i+" / "+todo.length+" — "+f.name.slice(0,46));
       netStreak = (!found && _netErrors>netAt) ? netStreak+1 : 0;
       if(netStreak>=3){ st.stopped=true; return st; }
       return step();
@@ -2009,6 +2024,7 @@ function verifyQueue(todo){
   }
   return step().then(function(r){
     phide();
+    markProcessing(null);
     /* сеть легла — это не «не найдено», файлы остаются непроверенными */
     if(r.stopped){
       failedNow.forEach(function(f){ f.info.status="raw"; f.info.source=""; });
@@ -2144,6 +2160,7 @@ function startRename(opts){
     if(j>=files.length){
       phide(); drawResults();
       madeTrue=true;
+      markProcessing(null);
       if(!opts.quiet) stt("Готово: "+results.length+" файлов в прежнем порядке."+(failed?" С ошибкой чтения: "+failed+".":""));
       busy=false; updateGoBtn();
       if(typeof opts.done === "function") opts.done();
@@ -2152,6 +2169,8 @@ function startRename(opts){
     var f=files[j], num=j+1;
     var isMp3=ext(f.name)==="mp3";
     var extPart=(f.name.match(/\.[^.]+$/) || [""])[0];
+    markProcessing(f);
+    pup(j, files.length, "Возвращаю имя "+(j+1)+" из "+files.length+": "+f.name);
     var finalName=uniqueName(isUnknownInfo(f.info) ? f.name : makeName(f.info, extPart, null));
 
     console.log("Rename: "+f.name+" → "+finalName);
@@ -2174,8 +2193,7 @@ function startRename(opts){
           trackNum: num
         });
         pup(j+1, files.length);
-        j++; setTimeout(nextFile, 0);
-      });
+        j++; setTimeout(nextFile, 0);      });
   }
   nextFile();
 }
@@ -2257,6 +2275,7 @@ function startShuffle(useNumbered){
   function nextFile(){
     if(j>=ordered.length){
       phide(); drawResults();
+      markProcessing(null);
       $("results").classList.add("show");
       stt("Готово: "+results.length+" файлов."+(failed?" С ошибкой чтения: "+failed+".":""));
       busy=false; dirty=false; updateGoBtn();
@@ -2265,6 +2284,8 @@ function startShuffle(useNumbered){
     var f=ordered[j], num=j+1;
     var isMp3=ext(f.name)==="mp3";
     var extPart=(f.name.match(/\.[^.]+$/) || [""])[0];
+    markProcessing(f);
+    pup(j, ordered.length, "Перемешиваю "+(j+1)+" из "+ordered.length+": "+f.name);
     var baseName=isUnknownInfo(f.info) ? f.name : makeName(f.info, extPart, null);
     /* У имени без данных свой номер уже может быть — второй не добавляем */
     if(useNumbered && isUnknownInfo(f.info)) baseName = baseName.replace(/^\d{1,3}\s*[-.]\s*/, "");
