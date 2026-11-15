@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.22</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.23</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -404,8 +404,7 @@ function keepArticle(artist, srcArtist){
   return "The " + a;
 }
 function parseTrackInfo(filename){
-  var stem = filename.replace(/\.[^.]+$/, "");
-  var cleaned = stripNamePrefix(stripTrackPrefix(stem));
+  var stem = filename.replace(/\.[^.]+$/, "");  var cleaned = stripNamePrefix(stripTrackPrefix(stem));
   cleaned = cleanJunk(cleaned);
   var split = trySplit(cleaned);
   var artist = foldMixed(split.artist), title = foldMixed(split.title);
@@ -854,8 +853,8 @@ function cutTo(s, n){
   return s;
 }
 function makeName(info, originalExt, trackNum){
-  var artist = info && info.artist ? info.artist.trim() : "";
-  var title  = info && info.title  ? info.title.trim()  : "unknown_track";
+  var artist = info && info.artist ? foldMixed(String(info.artist).trim()) : "";
+  var title  = info && info.title  ? foldMixed(String(info.title).trim())  : "unknown_track";
   if(!artist || !/[a-zA-Zа-яА-ЯёЁ]/.test(artist)) artist = "unknown_artist";
   if(!title || !/[a-zA-Zа-яА-ЯёЁ0-9]/.test(title))  title  = "unknown_track";
   artist = cutTo(safeNamePart(artist), 60) || "unknown_artist";
@@ -1553,7 +1552,8 @@ function tailOk(found, fileWords){
   });
 }
 function lookupTrack(info, dur){
-  var a=info.artist, t=info.title, raw=info._raw||"";
+  /* Латинские двойники вычищаем у любых входных данных, не только из имени файла */
+  var a=foldMixed(info.artist||""), t=foldMixed(info.title||""), raw=foldMixed(info._raw||"");
   var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";
   var term=(primary || raw).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
   if(!term) return Promise.resolve(null);
@@ -1756,6 +1756,9 @@ function verifyQueue(todo){
         /* Склеенное имя из файла («A-b-c») и кредит каталога «A & B» приводим к «A Feat. B» */
         if(!keepFeat && f.info._glued) f.info.artist = featCredit(f.info.artist);
         f.info.artist = keepArticle(f.info.artist, srcArtist);
+        /* На выходе латинских двойников быть не должно */
+        f.info.artist = foldMixed(f.info.artist);
+        f.info.title  = foldMixed(f.info.title);
         f.info.title  = (sameTitle && srcTitle && !lowerTitle) ? srcTitle : (foundTitle || srcTitle);
         f.info.source = found.source || "";
         f.info.score  = found.score || 0;
@@ -2350,8 +2353,8 @@ $("list").addEventListener("click", function(e){
     var ae=$("ed-artist"), te=$("ed-title");
     var aVal=ae?ae.value.trim():"", tVal=te?te.value.trim():"";
     if(!tVal) tVal="unknown_track";
-    files[idx].info.artist=aVal;
-    files[idx].info.title=tVal;
+    files[idx].info.artist=foldMixed(aVal);
+    files[idx].info.title=foldMixed(tVal);
     files[idx].info.status="manual";
     files[idx].info.alts=null; files[idx].info.altIdx=0;
     files[idx].info.source="";
