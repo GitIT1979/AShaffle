@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.19</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.20</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1539,6 +1539,16 @@ function drawResults(){
 /* ============================================================
    8. ПРОВЕРКА НАЗВАНИЙ И ASHUFFLE
    ============================================================ */
+/* Название кандидата должно состоять из слов файла: «На Заре» ⊂ «Звуки на заре» */
+function tailOk(found, fileWords){
+  if(!found || !found.title) return false;
+  var pool = fileWords.map(function(w){ return w.toLowerCase(); });
+  var tt = tokens(found.title);
+  if(!tt.length) return false;
+  return tt.every(function(w){
+    return pool.some(function(x){ return x === w || tokenNear(w, x); });
+  });
+}
 function lookupTrack(info, dur){
   var a=info.artist, t=info.title, raw=info._raw||"";
   var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";
@@ -1639,6 +1649,30 @@ function lookupTrack(info, dur){
     steps.push(guardArtist(function(){
       return lookupMusicBrainzByRecording(titleOnly).then(function(r){ return pickMusicBrainzResult(r, titleOnly, dur); });
     }, a));
+  }
+  /* Последняя попытка: первое слово исполнителя + хвост названия.
+     В тегах граница бывает сдвинута: «Alians- Звуки на» + «заре» → «Alians на заре» */
+  var headWord = String(a||"").split(/\s+/)[0].replace(/[-–—]+$/, "");
+  var allWords = (String(a||"") + " " + String(t||"")).split(/\s+/)
+                   .filter(function(w){ return /[a-zA-Zа-яА-ЯёЁ0-9]/.test(w); });
+  if(headWord && allWords.length >= 3){
+    var asked = {};
+    asked[qterm.toLowerCase()] = 1; asked[titleOnly.toLowerCase()] = 1;
+    [2, 3, 1].forEach(function(n){
+      if(n >= allWords.length) return;
+      var tail = allWords.slice(allWords.length - n).join(" ");
+      var q = (headWord + " " + tail).replace(/\s+/g, " ").trim();
+      var key = q.toLowerCase();
+      if(asked[key]) return;
+      asked[key] = 1;
+      /* Название в кандидате должно состоять из слов файла — нового не выдумываем */
+      steps.push(guardArtist(function(){
+        return lookupDeezer(q, dur, true).then(function(f){ return tailOk(f, allWords) ? f : null; });
+      }, headWord, tail));
+      steps.push(guardArtist(function(){
+        return lookupITunes(q, dur, true).then(function(f){ return tailOk(f, allWords) ? f : null; });
+      }, headWord, tail));
+    });
   }
 
   var i=0;

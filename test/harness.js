@@ -38,7 +38,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "foldMixed:foldMixed,collapseDoubles:collapseDoubles,stripSiteJunk:stripSiteJunk," +
   "altParse:altParse,altsPush:altsPush,sortAlts:sortAlts,altsFor:altsFor," +
   "splitGluedArtist:splitGluedArtist,featCredit:featCredit,keepArticle:keepArticle," +
-  "creditKey:creditKey,isGoodMatch:isGoodMatch," +
+  "creditKey:creditKey,isGoodMatch:isGoodMatch,tailOk:tailOk," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -196,6 +196,15 @@ parseCases.forEach(function(c){
   eq(p.artist, c[1], "разбор исполнителя: " + c[0]);
   eq(p.title, c[2], "разбор названия: " + c[0]);
 });
+
+/* ---------- хвост названия ---------- */
+{
+  const fp = api.parseTrackInfo("061 - Alians- Звуки на - заре.mp3");
+  const words = (fp.artist + " " + fp.title).split(/\s+/).filter(Boolean);
+  eq(api.tailOk({ artist: "Альянс", title: "На Заре" }, words), true, "«На Заре» из слов файла");
+  eq(api.tailOk({ artist: "Альянс", title: "Фальстарт" }, words), false, "чужое название не принимаем");
+  eq(api.tailOk({ artist: "Баста", title: "На заре" }, words), true, "хвост из слов файла при любом исполнителе");
+}
 
 /* ---------- склеенные имена и кредиты ---------- */
 {
