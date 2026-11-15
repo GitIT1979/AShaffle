@@ -49,6 +49,8 @@ h1{margin:0;font-size:30px;color:var(--g)}
 .fi.playing{background:var(--gl)}
 .ic{background:none;border:1px solid transparent;color:var(--m);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px;line-height:1}
 .ic:hover{background:var(--h);color:var(--t)}
+.ic[data-act="play"],.ic[data-play]{font-size:15px;color:var(--t)}
+.ic[data-act="play"]:hover,.ic[data-play]:hover{background:var(--bll);color:#1d4ed8}
 .ic.rm:hover{color:var(--d)}
 .bd{font-size:10.5px;padding:1px 7px;border-radius:9px;border:1px solid var(--b);color:var(--m);white-space:nowrap}
 .bd.ok{color:var(--gd);background:var(--gl);border-color:transparent}
@@ -114,7 +116,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.47</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.48</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1668,11 +1670,28 @@ function rowHtml(f,i){
 }
 
 /* Прослушивание прямо в списке */
+var playingRes = -1;
 function stopPlayback(){
   var a=$("player");
   if(a){ try{ a.pause(); a.removeAttribute("src"); a.load(); }catch(e){} }
   if(playingUrl){ try{ URL.revokeObjectURL(playingUrl); }catch(e){} }
-  playingUrl=""; playingId=0;
+  playingUrl=""; playingId=0; playingRes=-1;
+}
+/* Прослушивание в списке готовых файлов */
+function togglePlayRes(i){
+  var a=$("player");
+  if(!a) return;
+  var r=results[i];
+  if(!r) return;
+  if(playingRes===i){ stopPlayback(); drawResults(); return; }
+  stopPlayback();
+  playingUrl=URL.createObjectURL(r.file);
+  playingRes=i;
+  a.src=playingUrl;
+  a.onended=function(){ stopPlayback(); drawResults(); };
+  var p=a.play();
+  if(p && p.catch) p.catch(function(){ stopPlayback(); drawResults(); });
+  drawResults();
 }
 function togglePlay(id){
   var f=null;
@@ -1720,7 +1739,7 @@ function drawResults(){
     var tag=r.isMp3?('<span class="sz">TRCK='+r.trackNum+'</span>'):'<span class="sz">—</span>';
     var src=r.source?(' <span class="sz" style="font-size:10px;opacity:.7">'+esc(r.source)+'</span>'):'';
     var d=document.createElement("div");d.className="res-item";
-    d.innerHTML='<span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span>'+src+'<span class="ar">'+esc(r.artist||"—")+'</span>'+tag+'<span class="sz">'+fmtSize(r.size)+'</span><button class="btn sm" data-i="'+i+'" type="button">💾</button>';
+    d.innerHTML='<button class="ic" data-play="'+i+'" type="button" title="Прослушать">'+(playingRes===i?'⏸':'▶')+'</button><span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span>'+src+'<span class="ar">'+esc(r.artist||"—")+'</span>'+tag+'<span class="sz">'+fmtSize(r.size)+'</span><button class="btn sm" data-i="'+i+'" type="button">💾</button>';
     L.appendChild(d);
   });
   $("rcnt").textContent=results.length;
@@ -1730,6 +1749,9 @@ function drawResults(){
       download(r.file, r.name);
       stt("Скачан: "+r.name);
     });
+  });
+  Array.prototype.forEach.call(L.querySelectorAll("button[data-play]"),function(b){
+    b.addEventListener("click",function(e){ e.stopPropagation(); togglePlayRes(+e.target.dataset.play); });
   });
 }
 
