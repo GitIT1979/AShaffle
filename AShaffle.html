@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.23</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.24</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -237,8 +237,7 @@ var _ALIASES = {
   "zivert": "Зиверт",
   "billi ailish": "Билли Айлиш"
 };
-function aliasFor(artist){
-  var k = String(artist||"").toLowerCase().replace(/\s+/g, " ").replace(/[\s.,;:!?]+$/, "").trim();
+function aliasFor(artist){  var k = String(artist||"").toLowerCase().replace(/\s+/g, " ").replace(/[\s.,;:!?]+$/, "").trim();
   if(!k) return "";
   if(_ALIASES[k]) return _ALIASES[k];
   var keys = Object.keys(_ALIASES);
@@ -247,6 +246,32 @@ function aliasFor(artist){
     if(k.indexOf(keys[i] + " ") === 0) return _ALIASES[keys[i]];
   }
   return "";
+}
+/* Словарь знает и целые связки: «korol i shut» — это имя группы,
+   поэтому ищем самую короткую подходящую связку в начале «исполнитель + название» */
+function aliasSplit(artist, title){
+  var all = String(artist||"") + " " + String(title||"");
+  all = all.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  if(!all) return null;
+  var words = all.split(" ");
+  var limit = Math.min(words.length, 5);
+  for(var n=1; n<=limit; n++){
+    var phrase = words.slice(0, n).join(" ");
+    var alias = aliasFor(phrase);
+    if(alias) return { alias: alias, rest: words.slice(n).join(" ") };
+  }
+  return null;
+}
+/* Полное совпадение названия с запросом: длительность может врать (тишина, другой мастеринг),
+   но только в разумных пределах — не когда разница в минуту-две */
+var DUR_TOL_EXACT = 45;
+function durOkExact(fileDur, candMs){
+  if(!fileDur || !candMs) return true;
+  return Math.abs(candMs / 1000 - fileDur) <= DUR_TOL_EXACT;
+}
+function nameExact(query, artist, title){
+  var q = tokens(query).join(" "), r = tokens((artist||"") + " " + (title||"")).join(" ");
+  return !!q && q === r;
 }
 /** «(Bonus)», «(Remastered)» — не часть названия */
 function stripNoiseBrackets(s){
@@ -711,7 +736,7 @@ function pickMusicBrainzResult(recordings, query, dur){
     var mbTitle  = stripFeat(rec.title);
     if(isPlaceholder(mbArtist) || isPlaceholder(mbTitle)) continue;
     if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
-    if(!durOk(dur, rec.length)) continue;
+    if(!durOk(dur, rec.length) && !(nameExact(query, mbArtist, mbTitle) && durOkExact(dur, rec.length))) continue;
     if(!isGoodMatchFlex(query, mbArtist, mbTitle)) continue;
     var cleanTitle = String(mbTitle).trim();
     var s = matchScore(query, mbArtist, mbTitle, dur, rec.length);
@@ -756,7 +781,7 @@ function lookupDeezer(term, dur, loose){
     ((json && json.data) || []).forEach(function(t){
       if(!t || !t.title || !t.artist || !t.artist.name) return;
       if(isPlaceholder(t.artist.name) || isPlaceholder(t.title)) return;
-      if(!durOk(dur, (t.duration || 0) * 1000)) return;
+      if(!durOk(dur, (t.duration || 0) * 1000) && !(nameExact(term, t.artist.name, t.title) && durOkExact(dur, (t.duration || 0) * 1000))) return;
       var m = loose ? isGoodMatchLoose(term, t.artist.name, t.title) : isGoodMatchFlex(term, t.artist.name, t.title);
       if(!m) return;
       var s = matchScore(term, t.artist.name, t.title, dur, (t.duration || 0) * 1000);
@@ -809,7 +834,7 @@ function lookupITunes(term, dur, loose){
               if(!res.trackName || !res.artistName) continue;
               if(isPlaceholder(res.artistName) || isPlaceholder(res.trackName)) continue;
               if(!/[a-zA-Zа-яА-ЯёЁ]/.test(res.trackName)) continue;
-              if(!durOk(dur, res.trackTimeMillis)) continue;
+              if(!durOk(dur, res.trackTimeMillis) && !(nameExact(term, res.artistName, res.trackName) && durOkExact(dur, res.trackTimeMillis))) continue;
               var m2 = loose ? isGoodMatchLoose(term, res.artistName, res.trackName) : isGoodMatchFlex(term, res.artistName, res.trackName);
               if(!m2) continue;
               var cleanTitle = stripFeat(res.trackName);
@@ -1616,10 +1641,16 @@ function lookupTrack(info, dur){
   }
   /* Известные переводы имён групп: technology → Технология.
      Словарь — не догадка, поэтому спрашиваем сразу после основного запроса */
-  var alias = aliasFor(a);
-  if(alias && alias !== a){
-    var aliasTerm = (alias + " " + (titleQ || t)).trim();
-    if(aliasTerm.toLowerCase() !== qterm.toLowerCase()){
+  var als = aliasSplit(a, t);
+  if(als && als.alias && als.alias !== a){
+    var aliasTerm = (als.alias + " " + als.rest).replace(/\s+/g, " ").trim();
+    var restCyr = als.rest && !/[а-яё]/i.test(als.rest) ? untranslit(als.rest) : "";
+    var aliasTermCyr = (restCyr ? (als.alias + " " + restCyr) : "").trim();
+    if(aliasTermCyr && aliasTermCyr.toLowerCase() !== aliasTerm.toLowerCase()){
+      steps.push(function(){ return lookupDeezer(aliasTermCyr, dur); });
+      steps.push(function(){ return lookupITunes(aliasTermCyr, dur); });
+    }
+    if(aliasTerm && aliasTerm.toLowerCase() !== qterm.toLowerCase()){
       steps.push(function(){ return lookupDeezer(aliasTerm, dur); });
       steps.push(function(){ return lookupITunes(aliasTerm, dur); });
       steps.push(function(){

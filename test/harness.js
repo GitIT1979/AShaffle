@@ -39,6 +39,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "altParse:altParse,altsPush:altsPush,sortAlts:sortAlts,altsFor:altsFor," +
   "splitGluedArtist:splitGluedArtist,featCredit:featCredit,keepArticle:keepArticle," +
   "creditKey:creditKey,isGoodMatch:isGoodMatch,tailOk:tailOk,aliasFor:aliasFor," +
+  "aliasSplit:aliasSplit,nameExact:nameExact,durOkExact:durOkExact," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -202,6 +203,20 @@ parseCases.forEach(function(c){
 });
 
 /* ---------- словарь имён групп ---------- */
+{
+  const sp = api.aliasSplit("korol", "i shut-dva druga");
+  eq(sp && sp.alias, "Король и Шут", "связка из исполнителя и начала названия");
+  eq(sp && sp.rest, "dva druga", "остаток названия отделён");
+  eq(api.aliasSplit("technology", "Странные танцы").alias, "Технология", "обычный случай");
+  eq(api.aliasSplit("ava max", "sweet but psycho"), null, "нераспознанный исполнитель");
+
+  eq(api.nameExact("ava max sweet but psycho", "Ava Max", "Sweet but Psycho"), true, "точное совпадение имени");
+  eq(api.nameExact("ava max sweet but psycho", "Ava Max", "Sweet but Psycho (Acoustic)"), false, "другая версия — не точное");
+  eq(api.durOkExact(207.2, 187000), true, "разница 20 секунд допустима при точном имени");
+  eq(api.durOkExact(100, 206386), false, "разница более минуты — нет");
+}
+
+/* ---------- словарь: одиночное имя ---------- */
 {
   eq(api.aliasFor("technology"), "Технология", "словарное имя");
   eq(api.aliasFor("Technology"), "Технология", "регистр не важен");
