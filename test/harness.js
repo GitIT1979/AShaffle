@@ -43,7 +43,11 @@ code = code.replace(/\}\)\(\);\s*$/,
   "pullCreditFromTitle:pullCreditFromTitle,creditGaps:creditGaps," +
   "shaveGluedLetter:shaveGluedLetter,capitalizeArtist:capitalizeArtist," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
-  "rowHtml:rowHtml};\n})();");
+  "rowHtml:rowHtml,startRename:startRename,RULES:RULES," +
+  "norm:norm,stripNoiseBrackets:stripNoiseBrackets,isPlaceholder:isPlaceholder," +
+  "lookupTrack:lookupTrack,lookupDeezer:lookupDeezer,capWords:capWords," +
+  "completeCredit:completeCredit,isUnknownInfo:isUnknownInfo," +
+  "DUR_TOL:DUR_TOL,DUR_TOL_EXACT:DUR_TOL_EXACT,MIN_SCORE:MIN_SCORE,SUSPICIOUS:SUSPICIOUS};\n})();");
 
 function makeEl() {
   return {
@@ -465,6 +469,36 @@ parseCases.forEach(function(c){
       const got = Buffer.from(await res.arrayBuffer());
       ok(got.length > buf.length - 4096, "размер результата " + item.src);
       fs.writeFileSync(path.join(outDir, item.out), got);
+    }
+  }
+
+  /* ---------- реестр правил: каждое правило должно иметь живой код ---------- */
+  {
+    const R = api.RULES;
+    ok(Array.isArray(R) && R.length >= 30, "реестр правил заполнен (" + (R ? R.length : 0) + ")");
+    const ids = R.map(r => r.id);
+    eq(ids.join(","), ids.slice().sort((a, b) => a - b).join(","), "id правил идут по порядку");
+    eq(new Set(ids).size, ids.length, "id правил не повторяются");
+    const broken = R.filter(r => {
+      if (r.fn) return typeof api[r.fn] !== "function";
+      if (r.const) return api[r.const] === undefined;
+      if (r.inFn) return typeof api[r.inFn] !== "function";
+      return true;
+    });
+    eq(broken.map(r => r.id).join(","), "", "у каждого правила есть живой код");
+    const layers = new Set(R.map(r => r.layer));
+    ok(layers.has("вход") && layers.has("запрос") && layers.has("проверка") && layers.has("вывод"),
+       "правила покрывают все четыре слоя");
+
+    /* Пошаговые случаи: одно правило — один пример */
+    const cases = require("./rules.js");
+    const known = new Set(ids);
+    const unknown = cases.filter(c => !known.has(c.id)).map(c => c.id);
+    eq(unknown.join(","), "", "все случаи ссылаются на существующие правила");
+    for (const c of cases) {
+      let res = false;
+      try { res = !!c.run(api); } catch (e) { res = false; }
+      ok(res, "правило " + c.id + ": " + c.name);
     }
   }
 
