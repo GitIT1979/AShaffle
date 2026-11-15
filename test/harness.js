@@ -40,6 +40,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "splitGluedArtist:splitGluedArtist,featCredit:featCredit,keepArticle:keepArticle," +
   "creditKey:creditKey,isGoodMatch:isGoodMatch,tailOk:tailOk,aliasFor:aliasFor," +
   "aliasSplit:aliasSplit,nameExact:nameExact,durOkExact:durOkExact," +
+  "pullCreditFromTitle:pullCreditFromTitle,creditGaps:creditGaps," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -201,6 +202,25 @@ parseCases.forEach(function(c){
   eq(p.artist, c[1], "разбор исполнителя: " + c[0]);
   eq(p.title, c[2], "разбор названия: " + c[0]);
 });
+
+/* ---------- кредит, застрявший в названии ---------- */
+{
+  const pc = api.pullCreditFromTitle("g-eazy", "and halsey-him and i");
+  eq(pc && pc.artist, "g-eazy and halsey", "продолжение исполнителя возвращено");
+  eq(pc && pc.title, "him and i", "название очищено");
+  eq(api.pullCreditFromTitle("g-eazy", "him and i"), null, "обычное название не трогаем");
+  eq(api.pullCreditFromTitle("Queen", "Bohemian Rhapsody"), null, "без маркера кредита — нет");
+  const fp2 = api.pullCreditFromTitle("", "feat. Halsey - Him and I");
+  eq(fp2 && fp2.artist, "feat. Halsey", "feat в начале названия");
+
+  const gp2 = api.parseTrackInfo("099 - g-eazy - and halsey-him and i.mp3");
+  eq(gp2.artist, "g-eazy and halsey", "из имени файла кредит собран");
+  eq(gp2.title, "him and i", "из имени файла название собрано");
+
+  eq(api.creditGaps("G-Eazy", "g-eazy and halsey").join(","), "halsey", "недостающий участник найден");
+  eq(api.creditGaps("G-Eazy & Halsey", "g-eazy and halsey").length, 0, "полный кредит — пробелов нет");
+  eq(api.creditGaps("Ava Max", "ava max").length, 0, "одиночный исполнитель в порядке");
+}
 
 /* ---------- словарь имён групп ---------- */
 {

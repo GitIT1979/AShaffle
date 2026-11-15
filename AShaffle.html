@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.25</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.26</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -428,6 +428,18 @@ function keepArticle(artist, srcArtist){
   if(st.indexOf("the") < 0) return a;
   return "The " + a;
 }
+/* «and halsey-him and i» — в названии застряло продолжение исполнителя:
+   g-eazy + and halsey  →  «g-eazy and halsey» ,  «him and i» */
+function pullCreditFromTitle(artist, title){
+  var t = String(title||"").trim();
+  var m = t.match(/^(and|&|feat\.?|ft\.?|with|vs\.?|x)\s+(.{1,40}?)\s*[-–—]\s*(.+)$/i);
+  if(!m) return null;
+  var marker = m[1], name = m[2].trim(), rest = m[3].trim();
+  if(!name || !rest) return null;
+  if(!/[a-zA-Zа-яА-ЯёЁ]/.test(name) || !/[a-zA-Zа-яА-ЯёЁ]/.test(rest)) return null;
+  var head = String(artist||"").trim();
+  return { artist: (head ? head + " " : "") + marker + " " + name, title: rest };
+}
 function parseTrackInfo(filename){
   var stem = filename.replace(/\.[^.]+$/, "");  var cleaned = stripNamePrefix(stripTrackPrefix(stem));
   cleaned = cleanJunk(cleaned);
@@ -440,6 +452,9 @@ function parseTrackInfo(filename){
   var glued = false;
   var fixed = splitGluedArtist(artist);
   if(fixed !== artist){ glued = true; artist = fixed; }
+  /* Кредит, застрявший в названии, возвращаем к исполнителю */
+  var pulled = pullCreditFromTitle(artist, title);
+  if(pulled){ artist = pulled.artist; title = pulled.title; }
   return { artist: artist, title: title, _raw: rawForSearch, score: split.score || 0, _glued: glued };
 }
 
@@ -1386,6 +1401,11 @@ function inspectEntry(e){
         var changed = false;
         if(usefulTag(tags.artist) && norm(tags.artist) !== norm(e.info.artist)){ e.info.artist = stripSiteJunk(stripNamePrefix(foldMixed(tags.artist.trim()))); changed = true; }
         if(usefulTag(tags.title)  && norm(tags.title)  !== norm(e.info.title)){  e.info.title  = stripNoiseBrackets(stripSiteJunk(stripNamePrefix(foldMixed(tags.title.trim()))));  changed = true; }
+        if(changed){
+          /* Граница могла сдвинуться и в тегах: «g-eazy» + «and halsey-him and i» */
+          var pulledTag = pullCreditFromTitle(e.info.artist, e.info.title);
+          if(pulledTag){ e.info.artist = pulledTag.artist; e.info.title = pulledTag.title; }
+        }
         if(changed){ e.info.fromTags = true; e.info._raw = ""; }
       }
     }
@@ -1749,6 +1769,9 @@ function verifyQueue(todo){
       /* Исполнитель уже русский, а название ещё латиницей */
       return preferCyrillicTitle(found, f.duration, f.info.artist);
     }).then(function(found){
+      /* Полный кредит: «G-Eazy & Halsey» вместо «G-Eazy» */
+      return completeCredit(found, f.info, f.duration);
+    }).then(function(found){
       /* Сомнительное совпадение перепроверяем в Discogs */
       if(!found || found.score >= 0.8) return found;
       return discogsConfirm(found.artist, found.title).then(function(ok){
@@ -1825,6 +1848,38 @@ function verifyQueue(todo){
     }
     return r;
   });
+}
+
+/* Каталог часто знает только главного исполнителя: «G-Eazy» вместо «G-Eazy & Halsey».
+   Если в файле участников больше — ищем полный кредит в том же треке */
+function creditGaps(candArtist, srcArtist){
+  var src = unique(tokens(foldMixed(srcArtist||"")));
+  var got = unique(tokens(foldMixed(candArtist||"")));
+  return src.filter(function(w){
+    if(w.length < 3 || MODIFIERS[w] || w === "feat" || w === "ft") return false;
+    return !got.some(function(x){ return x === w || tokenNear(w, x); });
+  });
+}
+function betterCredit(found, cand, srcArtist){
+  if(!cand || !cand.artist || !cand.title) return null;
+  if(creditKey("", cand.title) !== creditKey("", found.title)) return null;
+  if(creditGaps(cand.artist, srcArtist).length >= creditGaps(found.artist, srcArtist).length) return null;
+  if(cand.alts) cand.alts = mergeAlts(cand.alts, found.alts);
+  return cand;
+}
+function completeCredit(found, info, dur){
+  if(!found || !found.artist) return Promise.resolve(found);
+  if(!creditGaps(found.artist, info.artist).length) return Promise.resolve(found);
+  var term = (foldMixed(info.artist||"") + " " + foldMixed(info.title||""))
+               .replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  if(!term) return Promise.resolve(found);
+  return lookupITunes(term, dur).then(function(it){
+    var pick = betterCredit(found, it, info.artist);
+    if(pick) return pick;
+    return lookupDeezer(term, dur).then(function(dz){
+      return betterCredit(found, dz, info.artist) || found;
+    });
+  }).catch(function(){ return found; });
 }
 
 /* Если найденный исполнитель записан латиницей, ищем тот же трек кириллицей */
