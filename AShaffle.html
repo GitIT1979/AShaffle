@@ -114,7 +114,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.43</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.45</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -377,7 +377,9 @@ function cleanJunk(s){
     .replace(/\s+official\s+video\b/gi, "")
     .replace(/\s+official\s+audio\b/gi, "")
     .replace(/\s+lyric\s+video\b/gi, "")
-    .replace(/\s+uuid[-\s][\w-]+/gi, "");
+    .replace(/\s+uuid[-\s][\w-]+/gi, "")
+    /* «everything i wanted audio» — одиночное служебное слово в конце */
+    .replace(/\s+(audio|video|lyrics|lyric|official|clip|hd|hq|mv|m\/v)$/gi, "");
   return stripSiteJunk(out.replace(/\s+/g, " ").trim());
 }
 /* Для поиска убираем и варианты записи: ищем песню, а версию выберет длительность */
