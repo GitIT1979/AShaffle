@@ -103,7 +103,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.9</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.11</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1540,9 +1540,13 @@ function verifyQueue(todo){
         var subset = fndTok.length > 0 && fndTok.every(function(w){
           return srcTok.some(function(x){ return x === w || tokenNear(w, x); });
         });
-        if(subset) keepFeat = true;
-        f.info.artist = keepFeat ? srcArtist : ((sameArtist && f.info.artist) ? f.info.artist : (found.artist || f.info.artist));
-        f.info.title  = (sameTitle  && f.info.title)  ? f.info.title  : (foundTitle  || f.info.title);
+        if(subset && fndTok.length < srcTok.length) keepFeat = true;
+        /* Если в файле всё строчными ("kesha"), берём написание базы */
+        var srcTitle = f.info.title || "";
+        var lowerArtist = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();
+        var lowerTitle  = !!srcTitle  && srcTitle  === srcTitle.toLowerCase()  && srcTitle  !== srcTitle.toUpperCase();
+        f.info.artist = keepFeat ? srcArtist : ((sameArtist && srcArtist && !lowerArtist) ? srcArtist : (found.artist || srcArtist));
+        f.info.title  = (sameTitle && srcTitle && !lowerTitle) ? srcTitle : (foundTitle || srcTitle);
         f.info.source = found.source || "";
         f.info.score  = found.score || 0;
         f.info.status = same ? "ok" : "fixed";
