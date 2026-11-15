@@ -116,7 +116,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.48</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.49</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -2386,7 +2386,13 @@ function startRename(opts){
 /* Переход к списку результатов: рабочий список и кнопки скрываются с эффектом */
 function confirmResults(){
   if(!madeTrue || confirmed || busy || verifying || !results.length) return;
-  stopPlayback();
+  /* Музыка не прерывается: переносим метку на строку результата */
+  if(playingId){
+    for(var pi=0; pi<files.length; pi++){
+      if(files[pi].id === playingId && results[pi]){ playingRes = pi; break; }
+    }
+    drawResults();
+  }
   var fc=$("filesCard"), acts=$("actions"), dz=$("dz");
   if(fc) fc.classList.add("anim-out");
   if(acts) acts.classList.add("anim-out");
@@ -2459,7 +2465,10 @@ function startShuffle(useNumbered){
   }
   function nextFile(){
     if(j>=ordered.length){
-      phide(); drawResults();
+      phide();
+      /* После перемешивания порядок другой — метка проигрывания больше не действительна */
+      playingRes = -1;
+      drawResults();
       markProcessing(null);
       $("results").classList.add("show");
       stt("Готово: "+results.length+" файлов."+(failed?" С ошибкой чтения: "+failed+".":""));
