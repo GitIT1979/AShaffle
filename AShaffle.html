@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.31</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.34</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -611,11 +611,17 @@ function translit(s){
 var _UNTR = [
   ["shch","щ"],["sch","щ"],["zh","ж"],["kh","х"],["ts","ц"],["ch","ч"],["sh","ш"],
   ["yu","ю"],["ya","я"],["yo","ё"],["ye","е"],["ii","ий"],["yy","ый"],
+  ["ay","ай"],["ey","ей"],["oy","ой"],["uy","уй"],
   ["a","а"],["b","б"],["c","к"],["d","д"],["e","е"],["f","ф"],["g","г"],["h","х"],
   ["i","и"],["j","дж"],["k","к"],["l","л"],["m","м"],["n","н"],["o","о"],["p","п"],
   ["q","к"],["r","р"],["s","с"],["t","т"],["u","у"],["v","в"],["w","в"],["x","кс"],
   ["y","ы"],["z","з"]
 ];
+/* MusicBrainz сравнивает кириллицу в кавычках с учётом регистра:
+   «Возвращайся» находится, «возвращайся» — нет */
+function capWords(s){
+  return String(s||"").replace(/(^|[\s\-–—])([а-яёa-z])/gi, function(m, pre, ch){ return pre + ch.toUpperCase(); });
+}
 function untranslit(s){
   var src = String(s||"").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
   var out = "", i = 0;
@@ -672,15 +678,16 @@ function _mbFetch(url, attempt){
       return r;
     });
 }
-function _mbRequest(query){
-  var key = "mb|" + query.toLowerCase();
+function _mbRequest(query, limit){
+  var lim = limit || 5;
+  var key = "mb|" + lim + "|" + query.toLowerCase();
   if(Object.prototype.hasOwnProperty.call(_mbCache, key)) return Promise.resolve(_mbCache[key]);
   var now = Date.now(), wait = Math.max(0, 1100 - (now - _lastMBRequest));
   return new Promise(function(resolve){
     setTimeout(function(){
       _lastMBRequest = Date.now();
       var url = "https://musicbrainz.org/ws/2/recording/?query=" +
-                encodeURIComponent(query) + "&fmt=json&limit=5";
+                encodeURIComponent(query) + "&fmt=json&limit=" + lim;
       _mbFetch(url)
         .then(function(r){ return r.json(); })
         .then(function(data){
@@ -698,7 +705,7 @@ function lookupMusicBrainzByArtistTitle(artist, title){
   var parts = [];
   if(artist) parts.push('artist:"' + artist.replace(/"/g,"") + '"');
   if(title)  parts.push('recording:"' + title.replace(/"/g,"") + '"');
-  return _mbRequest(parts.join(" AND "));
+  return _mbRequest(parts.join(" AND "), 15);
 }
 /* ---------- варианты одного названия ---------- */
 /* Несколько песен могут называться одинаково и совпадать по длительности.
@@ -763,7 +770,7 @@ function pickMusicBrainzResult(recordings, query, dur){
   for(var i=0;i<recordings.length;i++){
     var rec = recordings[i];
     if(!rec["artist-credit"] || !rec["artist-credit"].length) continue;
-    var mbArtist = rec["artist-credit"][0].name;
+    var mbArtist = rec["artist-credit"].map(function(c){ return (c.name || "") + (c.joinphrase || ""); }).join("").trim();
     var mbTitle  = stripFeat(rec.title);
     if(isPlaceholder(mbArtist) || isPlaceholder(mbTitle)) continue;
     if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
@@ -1756,7 +1763,22 @@ function lookupTrack(info, dur){
     /* Русские названия ищем и в каталогах, не только в MusicBrainz */
     steps.push(function(){ return lookupDeezer(unq, dur, true); });
     steps.push(function(){ return lookupITunes(unq, dur, true); });
-    pushMBTerm(unq);
+    pushMBTerm(capWords(unq));
+    /* MusicBrainz хранит кредиты вида «Джанго & Екатерина Гусева»:
+       отдельно ищем кириллическое название, а исполнителя сверяем сами */
+    var unqT = untranslit(titleQ || t);
+    if(unqT && unqT !== unq && /[а-яё]{3}/.test(unqT)){
+      var unqA = untranslit(String(a||"").replace(/[-_]+/g, " ")).trim();
+      var firstCyr = unqA.split(/\s+/)[0] || "";
+      steps.push(function(){
+        /* «Джанго & Екатерина Гусева» — в кредите первый исполнитель наш */
+        var q = firstCyr.length >= 3 ? lookupMusicBrainzByArtistTitle(capWords(firstCyr), capWords(unqT))
+                                      : lookupMusicBrainzByRecording(capWords(unqT));
+        return q.then(function(r){
+          return pickMusicBrainzResult(r, (unqA + " " + unqT).trim(), dur);
+        });
+      });
+    }
   }
   /* Смешанная письменность и лишние буквы — пробуем исправленный запрос */
   var qfold = foldMixed(qterm);
