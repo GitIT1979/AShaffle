@@ -103,4 +103,16 @@ module.exports = [
       a.dropJunkPrefix("DJ Грув") === "" &&
       a.dropJunkPrefix("The Beatles") === "" &&
       a.dropJunkPrefix("Би-2") === "" },
+
+  { id: 38, name: "кредит feat убирается из запроса", run: a =>
+      a.stripFeatCredit("monoir feat eneli 3 to 1") === "monoir 3 to 1" &&
+      a.stripFeatCredit("Egor Крид ft. Киркоров") === "Egor Крид" },
+
+  { id: 39, name: "пометка версии расширяет допуск по длительности", run: a =>
+      a.durOkExact(186, 220000) === true && a.durOk(186, 220000) === false },
+
+  { id: 40, name: "хвост версии сохраняется в названии", run: a =>
+      a.versionTail({ artist: "Monoir", title: "3 to 1" },
+                    { artist: "monoir feat eneli 3 to 1 get better radio", title: "remix" }) === "eneli get better radio remix" &&
+      a.versionTail({ artist: "Исполнитель", title: "Песня" }, { artist: "Исполнитель", title: "Песня" }) === "" },
 ];

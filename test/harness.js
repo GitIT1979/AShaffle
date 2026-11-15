@@ -48,6 +48,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "lookupTrack:lookupTrack,lookupDeezer:lookupDeezer,capWords:capWords," +
   "completeCredit:completeCredit,isUnknownInfo:isUnknownInfo," +
   "expandOrdinals:expandOrdinals,phraseTitle:phraseTitle,dropJunkPrefix:dropJunkPrefix," +
+  "versionTail:versionTail,stripFeatCredit:stripFeatCredit," +
   "DUR_TOL:DUR_TOL,DUR_TOL_EXACT:DUR_TOL_EXACT,MIN_SCORE:MIN_SCORE,SUSPICIOUS:SUSPICIOUS};\n})();");
 
 function makeEl() {

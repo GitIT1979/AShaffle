@@ -114,7 +114,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.41</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.43</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -229,7 +229,10 @@ var RULES = [
   { id:34, layer:"вывод",  text:"Несколько кандидатов: лучший применяется сразу, остальные доступны по кнопке ⇄", fn:"altsFor" },
   { id:35, layer:"запрос", text:"Числа-порядковые разворачиваются в слова: «на 5-м этаже» → «на пятом этаже»", fn:"expandOrdinals" },
   { id:36, layer:"запрос", text:"Если в исполнителя попал кусок названия — вся фраза ищется как название (без дублей транслита)", fn:"phraseTitle" },
-  { id:37, layer:"запрос", text:"Короткий латинский обрубок в начале имени срезается при поиске («Var Би-2» → «Би-2»); роли DJ/MC/TV не трогаются", fn:"dropJunkPrefix" }
+  { id:37, layer:"запрос", text:"Короткий латинский обрубок в начале имени срезается при поиске («Var Би-2» → «Би-2»); роли DJ/MC/TV не трогаются", fn:"dropJunkPrefix" },
+  { id:38, layer:"запрос", text:"Префиксный перебор: первые 4–6 слов фразы, кредит «feat» из запроса убирается", fn:"stripFeatCredit" },
+  { id:39, layer:"проверка", text:"Если в файле есть пометка версии (remix/live/radio), допуск по длительности расширяется до 60 с", const:"DUR_TOL_EXACT" },
+  { id:40, layer:"вывод",  text:"Хвост версии из исходной фразы сохраняется в названии: (Get Better Radio Remix)", fn:"versionTail" }
 ];
 /* Доступ к реестру для проверок и отладки */
 if(typeof window !== "undefined") window.__ashuffleRules = function(){ return RULES; };
@@ -542,7 +545,8 @@ var MODIFIERS = {
   official:1, video:1, audio:1, hd:1, hq:1,
   mono:1, stereo:1, deluxe:1, edition:1, bonus:1, track:1,
   demo:1, original:1, the:1, a:1, an:1, and:1, of:1, in:1,
-  to:1, on:1, for:1, by:1, with:1
+  to:1, on:1, for:1, by:1, with:1,
+  feat:1, ft:1, featuring:1
 };
 var SUSPICIOUS = { mashup:1, bootleg:1, remix:1, cover:1, parody:1, karaoke:1 };
 
@@ -631,10 +635,33 @@ function tokenNear(a, b){
   return lev(a,b) <= (min >= 6 ? 2 : 1);
 }
 
+/* Остаток исходной фразы с пометкой версии: «3 to 1» + «get better radio remix»
+   → «Get Better Radio Remix» — версия записи не теряется */
+var _VERSION_WORDS = /(remix|mix|live|radio|edit|version|acoustic|instrumental|extended|demo|cover|bootleg|remaster)/i;
+function versionTail(found, info){
+  if(!found || !found.title) return "";
+  var words = (String(info.artist||"") + " " + String(info.title||"")).replace(/\s+/g, " ").trim().split(/\s+/);
+  var pool = words.filter(Boolean).map(function(w){ return { w:w, key: tokens(w).join("") }; });
+  function consume(str){
+    tokens(str).forEach(function(t){
+      for(var i=0;i<pool.length;i++){ if(pool[i] && pool[i].key === t){ pool[i] = null; return; } }
+    });
+  }
+  consume(found.artist || "");
+  consume(found.title || "");
+  var rest = pool.filter(Boolean).map(function(x){ return x.w; })
+                 .filter(function(w){ return !/^(feat|ft)\.?$/i.test(w) && !/^[-–—]$/.test(w); });
+  if(!rest.length || rest.length > 6) return "";
+  var joined = rest.join(" ");
+  if(!_VERSION_WORDS.test(joined)) return "";
+  return joined;
+}
 /* Допуск по длительности: ремастер или тишина в начале могут добавить пару секунд */
 var DUR_TOL = 10;
 /* Ниже этого балла совпадение считается случайным: «Tyani» ≠ «Teni — HUSTLE» */
 var MIN_SCORE = 0.5;
+/* Пометка версии в самом файле расширяет допуск по длительности */
+var _wideWindow = false;
 function durOk(fileDur, candMs){
   if(!fileDur || !candMs) return true;
   return Math.abs(candMs/1000 - fileDur) <= DUR_TOL;
@@ -846,7 +873,7 @@ function pickMusicBrainzResult(recordings, query, dur){
     var mbTitle  = stripFeat(rec.title);
     if(isPlaceholder(mbArtist) || isPlaceholder(mbTitle)) continue;
     if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
-    if(!durOk(dur, rec.length) && !(nameExact(query, mbArtist, mbTitle) && durOkExact(dur, rec.length))) continue;
+    if(!durOk(dur, rec.length) && !(durOkExact(dur, rec.length) && (_wideWindow || nameExact(query, mbArtist, mbTitle)))) continue;
     if(!isGoodMatchFlex(query, mbArtist, mbTitle)) continue;
     var cleanTitle = String(mbTitle).trim();
     var s = matchScore(query, mbArtist, mbTitle, dur, rec.length);
@@ -884,6 +911,7 @@ function _jsonp(url, cbParam, timeoutMs){
 }
 function lookupDeezer(term, dur, loose){
   if(!term) return Promise.resolve(null);
+  var wide = _wideWindow;
   var key = "dz|" + Math.round(dur||0) + "|" + term.toLowerCase() + (loose ? "|L" : "");
   if(Object.prototype.hasOwnProperty.call(_dzCache, key)) return Promise.resolve(_dzCache[key]);
   var url = "https://api.deezer.com/search?q=" + encodeURIComponent(term) + "&limit=5&output=jsonp";
@@ -892,7 +920,7 @@ function lookupDeezer(term, dur, loose){
     ((json && json.data) || []).forEach(function(t){
       if(!t || !t.title || !t.artist || !t.artist.name) return;
       if(isPlaceholder(t.artist.name) || isPlaceholder(t.title)) return;
-      if(!durOk(dur, (t.duration || 0) * 1000) && !(nameExact(term, t.artist.name, t.title) && durOkExact(dur, (t.duration || 0) * 1000))) return;
+      if(!durOk(dur, (t.duration || 0) * 1000) && !(durOkExact(dur, (t.duration || 0) * 1000) && (wide || nameExact(term, t.artist.name, t.title)))) return;
       var m = loose ? isGoodMatchLoose(term, t.artist.name, t.title) : isGoodMatchFlex(term, t.artist.name, t.title);
       if(!m) return;
       var s = matchScore(term, t.artist.name, t.title, dur, (t.duration || 0) * 1000);
@@ -929,6 +957,7 @@ function discogsConfirm(artist, title){
 function lookupITunes(term, dur, loose){
   if(!CAN_ITUNES) return Promise.resolve(null);
   if(!term) return Promise.resolve(null);
+  var wide = _wideWindow;
   var key = "it|" + Math.round(dur||0) + "|" + term.toLowerCase() + (loose ? "|L" : "");
   if(Object.prototype.hasOwnProperty.call(_itCache, key)) return Promise.resolve(_itCache[key]);
   var now = Date.now(), wait = Math.max(0, 3200 - (now - _lastITRequest));
@@ -946,7 +975,7 @@ function lookupITunes(term, dur, loose){
               if(!res.trackName || !res.artistName) continue;
               if(isPlaceholder(res.artistName) || isPlaceholder(res.trackName)) continue;
               if(!/[a-zA-Zа-яА-ЯёЁ]/.test(res.trackName)) continue;
-              if(!durOk(dur, res.trackTimeMillis) && !(nameExact(term, res.artistName, res.trackName) && durOkExact(dur, res.trackTimeMillis))) continue;
+              if(!durOk(dur, res.trackTimeMillis) && !(durOkExact(dur, res.trackTimeMillis) && (wide || nameExact(term, res.artistName, res.trackName)))) continue;
               var m2 = loose ? isGoodMatchLoose(term, res.artistName, res.trackName) : isGoodMatchFlex(term, res.artistName, res.trackName);
               if(!m2) continue;
               var cleanTitle = stripFeat(res.trackName);
@@ -1768,6 +1797,10 @@ function dropJunkPrefix(artist){
   if(!/[а-яё]/i.test(rest)) return "";
   return rest;
 }
+/* «feat eneli» — не часть названия: для запроса кредит можно убрать */
+function stripFeatCredit(s){
+  return String(s||"").replace(/\s+(feat\.?|ft\.?|featuring|при\s+уч\.?)\s+\S+/gi, " ").replace(/\s+/g, " ").trim();
+}
 function lookupTrack(info, dur){
   /* Латинские двойники вычищаем у любых входных данных, не только из имени файла */
   var a=foldMixed(info.artist||""), t=foldMixed(info.title||""), raw=foldMixed(info._raw||"");
@@ -1775,6 +1808,7 @@ function lookupTrack(info, dur){
   if(isPlaceholder(a)) a = "";
   /* Заглушка или непроизносимая запись («花電車») — ищем по одному названию */
   if(isPlaceholder(a) || !tokens(a).length) a = "";
+  _wideWindow = _VERSION_WORDS.test(String(info.artist||"") + " " + String(info.title||""));
   var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";
   var term=(primary || raw || (a ? "" : t)).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
   if(!term) return Promise.resolve(null);
@@ -1785,10 +1819,14 @@ function lookupTrack(info, dur){
   var shortTerm = ((a ? a + " " : "") + (t || "").split(/\s+/).slice(0, 2).join(" ")).trim();
   if(shortTerm === qterm) shortTerm = "";
   /* Усечённое или неполное имя исполнителя — те же запасные варианты */
-  var titleOnly = (titleQ || t || "").trim();
+  var titleOnly = (titleWeak ? "" : (titleQ || t || "")).trim();
   if(titleOnly === qterm || titleOnly === shortTerm) titleOnly = "";
   var firstArtistWord = (a || "").split(/\s+/)[0] || "";
-  var shortArtistTerm = (firstArtistWord && t && firstArtistWord !== a) ? (firstArtistWord + " " + (titleQ || t)).trim() : "";
+  /* Название из одних служебных слов («remix») само по себе ничего не ищет:
+     запрос «исполнитель + remix» цепляет чужие ремиксы */
+  var titleTok = tokens(t || "");
+  var titleWeak = titleTok.length > 0 && titleTok.every(function(w){ return MODIFIERS[w]; });
+  var shortArtistTerm = (firstArtistWord && t && firstArtistWord !== a && !titleWeak) ? (firstArtistWord + " " + (titleQ || t)).trim() : "";
   if(shortArtistTerm === qterm) shortArtistTerm = "";
   var cyr = /[а-яё]/i.test(term);
 
@@ -1934,7 +1972,10 @@ function lookupTrack(info, dur){
   /* Усечённое имя файла сокращают постепенно */
   if(shortTerm){ pushDeezer(shortTerm); pushITunes(shortTerm); }
   /* Неполный исполнитель: первое слово имени */
-  if(shortArtistTerm){ pushDeezer(shortArtistTerm); pushITunes(shortArtistTerm); }
+  if(shortArtistTerm){
+    steps.push(guardTitle(titleQ || t, function(){ return lookupDeezer(shortArtistTerm, dur); }));
+    steps.push(guardTitle(titleQ || t, function(){ return lookupITunes(shortArtistTerm, dur); }));
+  }
   /* Совсем без исполнителя — по одному названию; название кандидата тоже проверяем */
   if(titleOnly){
     steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupDeezer(titleOnly, dur); }, a)));
@@ -1942,6 +1983,29 @@ function lookupTrack(info, dur){
     steps.push(guardTitle(titleOnly, guardArtist(function(){
       return lookupMusicBrainzByRecording(titleOnly).then(function(r){ return pickMusicBrainzResult(r, titleOnly, dur); });
     }, a)));
+  }
+  var headWord = String(a||"").split(/\s+/)[0].replace(/[-–—]+$/, "");
+  var allWords = (String(a||"") + " " + String(t||"")).split(/\s+/)
+                   .filter(function(w){ return /[a-zA-Zа-яА-ЯёЁ0-9]/.test(w); });
+  /* Префиксный перебор: первые 4–6 слов фразы (в исполнителя могло попасть название) */
+  if(allWords.length > 4){
+    var prefSeen = {};
+    for(var pk=4; pk<=Math.min(6, allWords.length-1); pk++){
+      (function(k){
+        var q = allWords.slice(0, k).join(" ").replace(/\s+/g, " ").trim();
+        if(!q || prefSeen[q.toLowerCase()]) return;
+        prefSeen[q.toLowerCase()] = 1;
+        steps.push(function(){
+          return lookupDeezer(q, dur, true).then(function(f){ return tailOk(f, allWords) ? f : null; });
+        });
+        var q2 = stripFeatCredit(q);
+        if(q2 && q2 !== q){
+          steps.push(function(){
+            return lookupDeezer(q2, dur, true).then(function(f){ return tailOk(f, allWords) ? f : null; });
+          });
+        }
+      })(pk);
+    }
   }
   /* Последняя попытка: вся фраза как название — когда в исполнителя попал кусок названия */
   var phrase = phraseTitle(a, t);
@@ -1954,9 +2018,6 @@ function lookupTrack(info, dur){
   }
   /* Последняя попытка: первое слово исполнителя + хвост названия.
      В тегах граница бывает сдвинута: «Alians- Звуки на» + «заре» → «Alians на заре» */
-  var headWord = String(a||"").split(/\s+/)[0].replace(/[-–—]+$/, "");
-  var allWords = (String(a||"") + " " + String(t||"")).split(/\s+/)
-                   .filter(function(w){ return /[a-zA-Zа-яА-ЯёЁ0-9]/.test(w); });
   if(headWord && allWords.length >= 3){
     var asked = {};
     asked[qterm.toLowerCase()] = 1; asked[titleOnly.toLowerCase()] = 1;
@@ -2069,8 +2130,11 @@ function verifyQueue(todo){
         f.info.artist = keepArticle(f.info.artist, srcArtist);
         /* На выходе латинских двойников быть не должно */
         f.info.artist = foldMixed(f.info.artist);
-        f.info.title  = foldMixed(f.info.title);
-        f.info.title  = (sameTitle && srcTitle && !lowerTitle) ? srcTitle : (foundTitle || srcTitle);
+        var finalTitle = (sameTitle && srcTitle && !lowerTitle) ? srcTitle : (foundTitle || srcTitle);
+        /* Версия записи из исходной фразы не теряется: «(Get Better Radio Remix)» */
+        var vtail = versionTail(found, { artist: srcArtist, title: srcTitle });
+        if(vtail && norm(finalTitle).indexOf(norm(vtail)) < 0) finalTitle = finalTitle + " (" + capWords(vtail) + ")";
+        f.info.title = foldMixed(finalTitle);
         f.info.source = found.source || "";
         f.info.score  = found.score || 0;
         f.info.status = same ? "ok" : "fixed";
@@ -2131,7 +2195,19 @@ function completeCredit(found, info, dur){
     var pick = betterCredit(found, it, info.artist);
     if(pick) return pick;
     return lookupDeezer(term, dur).then(function(dz){
-      return betterCredit(found, dz, info.artist) || found;
+      var p2 = betterCredit(found, dz, info.artist);
+      if(p2) return p2;
+      /* Второй заход — по чистому «исполнитель + название»: полный кредит
+         в каталоге часто записан именно так */
+      var clean = ((found.artist || "") + " " + (found.title || "")).trim();
+      if(!clean || clean.toLowerCase() === term.toLowerCase()) return found;
+      return lookupITunes(clean, dur).then(function(it2){
+        var p3 = betterCredit(found, it2, info.artist);
+        if(p3) return p3;
+        return lookupDeezer(clean, dur).then(function(dz2){
+          return betterCredit(found, dz2, info.artist) || found;
+        });
+      });
     });
   }).catch(function(){ return found; });
 }
