@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.34</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.35</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -611,7 +611,6 @@ function translit(s){
 var _UNTR = [
   ["shch","щ"],["sch","щ"],["zh","ж"],["kh","х"],["ts","ц"],["ch","ч"],["sh","ш"],
   ["yu","ю"],["ya","я"],["yo","ё"],["ye","е"],["ii","ий"],["yy","ый"],
-  ["ay","ай"],["ey","ей"],["oy","ой"],["uy","уй"],
   ["a","а"],["b","б"],["c","к"],["d","д"],["e","е"],["f","ф"],["g","г"],["h","х"],
   ["i","и"],["j","дж"],["k","к"],["l","л"],["m","м"],["n","н"],["o","о"],["p","п"],
   ["q","к"],["r","р"],["s","с"],["t","т"],["u","у"],["v","в"],["w","в"],["x","кс"],
@@ -623,7 +622,13 @@ function capWords(s){
   return String(s||"").replace(/(^|[\s\-–—])([а-яёa-z])/gi, function(m, pre, ch){ return pre + ch.toUpperCase(); });
 }
 function untranslit(s){
-  var src = String(s||"").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  var raw = String(s||"").replace(/([a-z])([A-Z])/g, "$1 $2");
+  /* «ay/ey/oy/uy» — «ай/ей/ой/уй» только перед согласной или в конце слова:
+     «Moya» → «Моя», но «chaysya» → «чайся» */
+  raw = raw.replace(/([aeou])y(?![aeiouy])/gi, function(m, v){
+    return { a:"ай", e:"ей", o:"ой", u:"уй" }[v.toLowerCase()];
+  });
+  var src = raw.toLowerCase();
   var out = "", i = 0;
   while(i < src.length){
     var hit = null, len = 0;
