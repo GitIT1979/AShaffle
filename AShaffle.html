@@ -114,7 +114,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.46</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.47</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1649,7 +1649,7 @@ function rowHtml(f,i){
     '<span class="n">'+idx+'</span>'+
     '<div class="fmain">'+
       '<div class="top">'+
-        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать">'+(playingId===f.id?'⏸':'▶')+'</button>'+
+        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать (можно просто щёлкнуть по строке)">'+(playingId===f.id?'⏸':'▶')+'</button>'+
         '<span class="nm" title="'+esc(f.path || f.name)+'">'+esc(f.name)+'</span>'+
         '<span class="ex">'+e+'</span>'+
         '<button class="ic" data-act="edit" data-id="'+f.id+'" type="button" title="Исправить исполнителя и название">✎</button>'+
@@ -2761,10 +2761,17 @@ $("dlAll").addEventListener("click", function(){
 /* Кнопки в списке файлов: править, сохранить, сбросить, убрать */
 $("list").addEventListener("click", function(e){
   var b = e.target.closest ? e.target.closest("[data-act]") : null;
-  if(!b) return;
+  /* Клик по самой строке (не по кнопке) — слушать трек */
+  if(!b){
+    var tag = (e.target.tagName || "").toLowerCase();
+    if(tag === "input" || tag === "button") return;
+    var row = e.target.closest ? e.target.closest(".fi") : null;
+    if(row && row.dataset.id && !row.querySelector("input")) togglePlay(+row.dataset.id);
+    return;
+  }
   var id0=+b.dataset.id, act0=b.dataset.act;
-  /* Вариант можно переключить и во время проверки: это не меняет очередь */
-  if((busy || verifying) && act0 !== "alt"){
+  /* Слушать и менять вариант можно и во время проверки: это не меняет очередь */
+  if((busy || verifying) && act0 !== "alt" && act0 !== "play"){
     stt("Дождитесь окончания проверки…");
     return;
   }
