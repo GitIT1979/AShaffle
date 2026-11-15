@@ -103,7 +103,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.12</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.13</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -248,6 +248,14 @@ function stripNoiseBrackets(s){
   return String(s||"").replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
     return _noiseInner(inner) ? "" : m;
   }).replace(/\s{2,}/g, " ").trim();
+}
+/* «Unknown Artist», «VA» и прочие заглушки — не название */
+function isPlaceholder(s){
+  return /^(unknown(\s+(artist|track))?|va|various\s+artists|no\s+artist|none|n\/a)$/i.test(String(s||"").trim());
+}
+function isUnknownInfo(info){
+  var a=(info&&info.artist)||"", t=(info&&info.title)||"";
+  return (!a || /^unknown_artist$/i.test(a)) && (!t || /^unknown_track$/i.test(t));
 }
 function cleanJunk(s){
   var out = String(s).replace(/\s*[\(\[]([^\)\]]*)[\)\]]/g, function(m, inner){
@@ -603,6 +611,7 @@ function pickMusicBrainzResult(recordings, query, dur){
     if(!rec["artist-credit"] || !rec["artist-credit"].length) continue;
     var mbArtist = rec["artist-credit"][0].name;
     var mbTitle  = stripFeat(rec.title);
+    if(isPlaceholder(mbArtist) || isPlaceholder(mbTitle)) continue;
     if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
     if(!durOk(dur, rec.length)) continue;
     if(!isGoodMatchFlex(query, mbArtist, mbTitle)) continue;
@@ -646,6 +655,7 @@ function lookupDeezer(term, dur){
     var out = null, best = -1;
     ((json && json.data) || []).forEach(function(t){
       if(!t || !t.title || !t.artist || !t.artist.name) return;
+      if(isPlaceholder(t.artist.name) || isPlaceholder(t.title)) return;
       if(!durOk(dur, (t.duration || 0) * 1000)) return;
       if(!isGoodMatchFlex(term, t.artist.name, t.title)) return;
       var s = matchScore(term, t.artist.name, t.title, dur, (t.duration || 0) * 1000);
@@ -693,6 +703,7 @@ function lookupITunes(term, dur){
             for(var i=0;i<data.results.length;i++){
               var res = data.results[i];
               if(!res.trackName || !res.artistName) continue;
+              if(isPlaceholder(res.artistName) || isPlaceholder(res.trackName)) continue;
               if(!/[a-zA-Zа-яА-ЯёЁ]/.test(res.trackName)) continue;
               if(!durOk(dur, res.trackTimeMillis)) continue;
               if(!isGoodMatchFlex(term, res.artistName, res.trackName)) continue;
@@ -897,19 +908,46 @@ function decodeTextFrame(body){
   }catch(e){ return ""; }
   return text.split("\u0000")[0].replace(/\u0000+/g, "").trim();
 }
+/* ID3v1 в конце файла: многие рипы хранят имя только там */
+function readId3v1(file){
+  if(file.size < 128) return Promise.resolve(null);
+  return file.slice(file.size - 128).arrayBuffer().then(function(buf){
+    var u8 = new Uint8Array(buf);
+    if(String.fromCharCode(u8[0],u8[1],u8[2]) !== "TAG") return null;
+    function dec(off, len){
+      var bytes = u8.subarray(off, off + len), end = bytes.length;
+      while(end > 0 && (bytes[end-1] === 0 || bytes[end-1] === 32)) end--;
+      bytes = bytes.subarray(0, end);
+      if(!bytes.length) return "";
+      try{ return new TextDecoder("utf-8", { fatal: true }).decode(bytes).trim(); }catch(e){}
+      try{ return new TextDecoder("windows-1251").decode(bytes).trim(); }catch(e){}
+      return "";
+    }
+    return { title: dec(3, 30), artist: dec(33, 30), album: dec(63, 30) };
+  }).catch(function(){ return null; });
+}
 function readMp3Tags(file){
   return file.slice(0, 768*1024).arrayBuffer().then(function(buf){
     var tag = readId3Tag(new Uint8Array(buf));
-    if(!tag || !tag.frames || !tag.frames.length) return null;
     var out = {};
-    tag.frames.forEach(function(f){
-      var v;
-      if(f.id === "TIT2" && !out.title){ v = decodeTextFrame(f.body); if(v) out.title = v; }
-      else if(f.id === "TPE1" && !out.artist){ v = decodeTextFrame(f.body); if(v) out.artist = v; }
-      else if(f.id === "TALB" && !out.album){ v = decodeTextFrame(f.body); if(v) out.album = v; }
-      else if(f.id === "TLEN" && !out.length){ v = parseInt(decodeTextFrame(f.body), 10); if(v > 0) out.length = v; }
+    if(tag && tag.frames && tag.frames.length){
+      tag.frames.forEach(function(f){
+        var v;
+        if(f.id === "TIT2" && !out.title){ v = decodeTextFrame(f.body); if(v) out.title = v; }
+        else if(f.id === "TPE1" && !out.artist){ v = decodeTextFrame(f.body); if(v) out.artist = v; }
+        else if(f.id === "TALB" && !out.album){ v = decodeTextFrame(f.body); if(v) out.album = v; }
+        else if(f.id === "TLEN" && !out.length){ v = parseInt(decodeTextFrame(f.body), 10); if(v > 0) out.length = v; }
+      });
+    }
+    if(out.title && out.artist) return out;
+    return readId3v1(file).then(function(v1){
+      if(v1){
+        if(!out.title && v1.title) out.title = v1.title;
+        if(!out.artist && v1.artist) out.artist = v1.artist;
+        if(!out.album && v1.album) out.album = v1.album;
+      }
+      return (out.title || out.artist) ? out : null;
     });
-    return out;
   }).catch(function(){ return null; });
 }
 /* FLAC: VORBIS_COMMENT с тегами + STREAMINFO с длительностью */
@@ -1392,6 +1430,7 @@ function lookupTrack(info, dur){
   var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";
   var term=(primary || raw).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
   if(!term) return Promise.resolve(null);
+  if(!primary && (!t || t === "unknown_track")) return Promise.resolve(null);
 
   var qterm = dropVariants(term) || term;
   var titleQ = dropVariants(t || "");
@@ -1644,7 +1683,7 @@ function startRename(){
     var f=files[j], num=j+1;
     var isMp3=ext(f.name)==="mp3";
     var extPart=(f.name.match(/\.[^.]+$/) || [""])[0];
-    var finalName=uniqueName(makeName(f.info, extPart, null));
+    var finalName=uniqueName(isUnknownInfo(f.info) ? f.name : makeName(f.info, extPart, null));
 
     console.log("Rename: "+f.name+" → "+finalName);
 
@@ -1757,7 +1796,8 @@ function startShuffle(useNumbered){
     var f=ordered[j], num=j+1;
     var isMp3=ext(f.name)==="mp3";
     var extPart=(f.name.match(/\.[^.]+$/) || [""])[0];
-    var finalName=uniqueName(makeName(f.info, extPart, useNumbered ? num : null));
+    var baseName=isUnknownInfo(f.info) ? f.name : makeName(f.info, extPart, null);
+    var finalName=uniqueName(useNumbered ? (pad3(num)+" - "+baseName) : baseName);
 
     console.log("Rename: "+f.name+" → "+finalName);
 
