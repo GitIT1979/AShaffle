@@ -114,7 +114,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.38</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.39</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -226,7 +226,9 @@ var RULES = [
   { id:31, layer:"вывод",  text:"Совпадение имён разводится суффиксом « (2)»", inFn:"startRename" },
   { id:32, layer:"вывод",  text:"Если данных нет — имя файла не меняется, заглушки не подставляются", fn:"isUnknownInfo" },
   { id:33, layer:"вывод",  text:"ID3 перезаписывается (TIT2, TPE1, TRCK), прочие кадры сохраняются", fn:"buildId3v24Tag" },
-  { id:34, layer:"вывод",  text:"Несколько кандидатов: лучший применяется сразу, остальные доступны по кнопке ⇄", fn:"altsFor" }
+  { id:34, layer:"вывод",  text:"Несколько кандидатов: лучший применяется сразу, остальные доступны по кнопке ⇄", fn:"altsFor" },
+  { id:35, layer:"запрос", text:"Числа-порядковые разворачиваются в слова: «на 5-м этаже» → «на пятом этаже»", fn:"expandOrdinals" },
+  { id:36, layer:"запрос", text:"Если в исполнителя попал кусок названия — вся фраза ищется как название (без дублей транслита)", fn:"phraseTitle" }
 ];
 /* Доступ к реестру для проверок и отладки */
 if(typeof window !== "undefined") window.__ashuffleRules = function(){ return RULES; };
@@ -1722,6 +1724,37 @@ function shaveGluedLetter(artist){
   var out = s.replace(/^[A-Za-zА-ЯЁ](?=[А-ЯЁ])/, "");
   return (out !== s && out.length > 1) ? out : "";
 }
+/* Порядковые числительные: «на 5-м этаже» люди пишут и так,
+   а в каталоге — «на пятом этаже» */
+var _ORD_NOM = ["первый","второй","третий","четвёртый","пятый","шестой","седьмой","восьмой","девятый","десятый","одиннадцатый","двенадцатый"];
+var _ORD_PREP = ["первом","втором","третьем","четвёртом","пятом","шестом","седьмом","восьмом","девятом","десятом","одиннадцатом","двенадцатом"];
+function expandOrdinals(s){
+  return String(s||"").replace(/(^|[^\d])(\d{1,2})\s*[-–—]?\s*(й|я|ый|ой|ом|м|го|му|е)(?![а-яё])/gi, function(m, pre, num, suf){
+    var n = parseInt(num, 10);
+    if(!(n >= 1 && n <= 12)) return m;
+    var low = suf.toLowerCase();
+    var word = (/^(м|ом|го|му|е)$/.test(low)) ? _ORD_PREP[n-1] : _ORD_NOM[n-1];
+    if(!word) return m;
+    return pre + word;
+  });
+}
+/* Вся фраза как название: «Moya Моя Любовь На 5-Ом» + «Этаже».
+   Дубли транслита схлопываются («Moya» = «Моя»), числительные разворачиваются. */
+function phraseTitle(artist, title){
+  var words = (String(artist||"") + " " + String(title||"")).split(/\s+/).filter(Boolean);
+  var out = [];
+  words.forEach(function(w){
+    var key = translit(w.toLowerCase());
+    for(var i=0;i<out.length;i++){
+      if(translit(out[i].toLowerCase()) === key){
+        if(/[а-яё]/i.test(w) && !/[а-яё]/i.test(out[i])) out[i] = w;
+        return;
+      }
+    }
+    out.push(w);
+  });
+  return expandOrdinals(out.join(" ")).replace(/\s+/g, " ").trim();
+}
 function lookupTrack(info, dur){
   /* Латинские двойники вычищаем у любых входных данных, не только из имени файла */
   var a=foldMixed(info.artist||""), t=foldMixed(info.title||""), raw=foldMixed(info._raw||"");
@@ -1884,6 +1917,15 @@ function lookupTrack(info, dur){
     steps.push(guardTitle(titleOnly, guardArtist(function(){
       return lookupMusicBrainzByRecording(titleOnly).then(function(r){ return pickMusicBrainzResult(r, titleOnly, dur); });
     }, a)));
+  }
+  /* Последняя попытка: вся фраза как название — когда в исполнителя попал кусок названия */
+  var phrase = phraseTitle(a, t);
+  if(phrase && phrase.toLowerCase() !== qterm.toLowerCase() && tokens(phrase).length >= 3){
+    steps.push(guardTitle(phrase, function(){ return lookupDeezer(phrase, dur, true); }));
+    steps.push(guardTitle(phrase, function(){ return lookupITunes(phrase, dur, true); }));
+    steps.push(guardTitle(phrase, function(){
+      return lookupMusicBrainzByRecording(capWords(phrase)).then(function(r){ return pickMusicBrainzResult(r, phrase, dur); });
+    }));
   }
   /* Последняя попытка: первое слово исполнителя + хвост названия.
      В тегах граница бывает сдвинута: «Alians- Звуки на» + «заре» → «Alians на заре» */

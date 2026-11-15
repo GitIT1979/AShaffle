@@ -64,8 +64,7 @@ module.exports = [
       a.tailOk({ title: "На Заре" }, ["Alians", "Звуки", "на", "заре"]) &&
       !a.tailOk({ title: "Фальстарт" }, ["Alians", "Звуки", "на", "заре"]) },
 
-  { id: 26, name: "ремикс не принимается без запроса", run: a =>
-      a.isGoodMatch("the black eyed peas j balvin ritmo", "Black Eyed Peas, J Balvin & SWACQ", "RITMO (Bad Boys For Life) [SWACQ Remix]") === false },
+  { id: 26, name: "ремикс не принимается без запроса", run: a =>      a.isGoodMatch("the black eyed peas j balvin ritmo", "Black Eyed Peas, J Balvin & SWACQ", "RITMO (Bad Boys For Life) [SWACQ Remix]") === false },
 
   { id: 27, name: "недостающий участник кредита виден", run: a =>
       a.creditGaps("G-Eazy", "g-eazy and halsey").join(",") === "halsey" &&
@@ -90,4 +89,12 @@ module.exports = [
       const out = a.altsFor({ artist: "25/17", title: "Холодная весна", source: "Deezer", score: 0.9 }, l, 186700);
       return out[0].artist === "25/17" && out[1].artist === "Джанго";
     } },
+
+  { id: 35, name: "порядковые числа разворачиваются в слова", run: a =>
+      a.expandOrdinals("на 5-м этаже") === "на пятом этаже" &&
+      a.expandOrdinals("На 5-Ом Этаже") === "На пятом Этаже" &&
+      a.expandOrdinals("1-й альбом") === "первый альбом" },
+
+  { id: 36, name: "вся фраза как название, дубли транслита схлопнуты", run: a =>
+      a.phraseTitle("Moya Моя Любовь На 5-Ом", "Этаже") === "Моя Любовь На пятом Этаже" },
 ];
