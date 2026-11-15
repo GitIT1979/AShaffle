@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.18</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.19</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -375,6 +375,31 @@ function altParse(filename){
   if(!artist || !title) return null;
   return { artist: foldMixed(artist), title: foldMixed(title), _raw: cleaned, score: 0 };
 }
+/* «the-black-eyed-peas-j-balvin» — дефисы вместо пробелов */
+function splitGluedArtist(s){
+  var t = String(s||"").trim();
+  if(!t || /\s/.test(t)) return t;
+  if((t.match(/-/g) || []).length < 2) return t;
+  return t.split(/-+/).filter(function(w){ return w; }).join(" ");
+}
+/* «A & B», «A, B» — приводим к виду «A Feat. B» */
+function featCredit(artist){
+  var s = String(artist||"").trim();
+  if(!s) return s;
+  var parts = s.split(/\s*(?:&|,|\bfeat\.?|\bft\.?|\bx\b)\s*/i).filter(function(w){ return w; });
+  if(parts.length < 2) return s;
+  return parts[0] + " Feat. " + parts.slice(1).join(" & ");
+}
+/* Каталог часто теряет «The» у группы — возвращаем его из имени файла */
+function keepArticle(artist, srcArtist){
+  var a = String(artist||"").trim(), s = String(srcArtist||"").trim();
+  if(!a || /[А-Яа-яЁё]/.test(a)) return a;
+  var st = tokens(s), at = tokens(a);
+  if(!st.length || st[0] !== "the") return a;
+  if(at.length && at[0] === "the") return a;
+  if(st.indexOf("the") < 0) return a;
+  return "The " + a;
+}
 function parseTrackInfo(filename){
   var stem = filename.replace(/\.[^.]+$/, "");
   var cleaned = stripNamePrefix(stripTrackPrefix(stem));
@@ -385,7 +410,10 @@ function parseTrackInfo(filename){
   title = cleanJunk(title);
   if(!/[a-zA-Zа-яА-ЯёЁ]/.test(title)) title = "unknown_track";
   if(artist && !/[a-zA-Zа-яА-ЯёЁ]/.test(artist)) artist = "";
-  return { artist: artist, title: title, _raw: rawForSearch, score: split.score || 0 };
+  var glued = false;
+  var fixed = splitGluedArtist(artist);
+  if(fixed !== artist){ glued = true; artist = fixed; }
+  return { artist: artist, title: title, _raw: rawForSearch, score: split.score || 0, _glued: glued };
 }
 
 /* ============================================================
@@ -450,8 +478,10 @@ function isGoodMatch(query, mbArtist, mbTitle, near){
     return allIn2;
   }
   var extra = sigR.filter(function(w){ return !has(q, w); });
+  /* Проверяем по всем словам кандидата: ремикс и кавер не должны пролезать,
+     даже если они отфильтрованы как служебные */
   for(var k in SUSPICIOUS){
-    if(extra.indexOf(k) >= 0 && !has(q, k)) return false;
+    if(r.indexOf(k) >= 0 && q.indexOf(k) < 0) return false;
   }
   if(extra.length > sigQ.length) return false;
   return true;
@@ -618,11 +648,21 @@ function lookupMusicBrainzByArtistTitle(artist, title){
 /* ---------- варианты одного названия ---------- */
 /* Несколько песен могут называться одинаково и совпадать по длительности.
    Собираем всех подходящих кандидатов, лучшего берём сразу, остальные — на выбор. */
+/* Ключ «тот же самый кредит»: без служебных слов, «feat» и регистра.
+   Название сравниваем как есть — иначе (live) и (acoustic) схлопнутся с оригиналом */
+function creditKey(artist, title){
+  var sig = tokens(artist).filter(function(w){
+    return !MODIFIERS[w] && w !== "feat" && w !== "ft" && w !== "x";
+  }).sort().join(" ");
+  return sig + "|" + tokens(title).sort().join(" ");
+}
 function altsPush(list, cand){
   if(!cand || !cand.artist || !cand.title) return;
-  var k = norm(cand.artist) + "|" + norm(cand.title);
+  /* Сравниваем по набору слов: «The Black Eyed Peas Feat. J Balvin» и
+     «Black Eyed Peas & J Balvin» — один и тот же кредит */
+  var k = creditKey(cand.artist, cand.title);
   for(var i=0;i<list.length;i++){
-    if(norm(list[i].artist) + "|" + norm(list[i].title) === k){
+    if(creditKey(list[i].artist, list[i].title) === k){
       if((cand.score||0) > (list[i].score||0)) list[i] = cand;
       return;
     }
@@ -649,10 +689,10 @@ function altsFor(chosen, extra, fileDur){
   altsPush(list, { artist: chosen.artist, title: chosen.title, source: chosen.source, score: chosen.score || 0, dur: fileDur || 0 });
   (extra || []).forEach(function(c){ altsPush(list, c); });
   var sorted = sortAlts(list, 6);
-  var key = norm(chosen.artist) + "|" + norm(chosen.title);
+  var key = creditKey(chosen.artist, chosen.title);
   var rest = [], self = null;
   sorted.forEach(function(c){
-    if(norm(c.artist) + "|" + norm(c.title) === key) self = c;
+    if(creditKey(c.artist, c.title) === key) self = c;
     else rest.push(c);
   });
   if(!self) self = { artist: chosen.artist, title: chosen.title, source: chosen.source, score: chosen.score || 0, dur: fileDur || 0 };
@@ -1655,18 +1695,26 @@ function verifyQueue(todo){
         var featMatch = srcArtist.match(/^(.+?)\s+(?:feat\.?|ft\.?)\s+(.+)$/i);
         var keepFeat = false;
         if(featMatch && isGoodMatchFlex(featMatch[1], found.artist || "", "")) keepFeat = true;
-        /* Если найденный исполнитель — часть исходного («Sean Paul» внутри «Imanbek & Sean Paul»), оставляем исходный */
+        /* Если найденный исполнитель — часть исходного («Sean Paul» внутри «Imanbek & Sean Paul»), оставляем исходный.
+           Но «лишним» должен быть настоящий исполнитель, а не артикль «the» */
         var srcTok = unique(tokens(srcArtist));
         var fndTok = unique(tokens(found.artist || ""));
         var subset = fndTok.length > 0 && fndTok.every(function(w){
           return srcTok.some(function(x){ return x === w || tokenNear(w, x); });
         });
-        if(subset && fndTok.length < srcTok.length) keepFeat = true;
+        var extraTok = srcTok.filter(function(w){
+          return !fndTok.some(function(x){ return x === w || tokenNear(w, x); });
+        });
+        var extraMeaningful = extraTok.some(function(w){ return w.length > 2 && !MODIFIERS[w]; });
+        if(subset && fndTok.length < srcTok.length && extraMeaningful) keepFeat = true;
         /* Если в файле всё строчными ("kesha"), берём написание базы */
         var srcTitle = f.info.title || "";
         var lowerArtist = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();
         var lowerTitle  = !!srcTitle  && srcTitle  === srcTitle.toLowerCase()  && srcTitle  !== srcTitle.toUpperCase();
         f.info.artist = keepFeat ? srcArtist : ((sameArtist && srcArtist && !lowerArtist) ? srcArtist : (found.artist || srcArtist));
+        /* Склеенное имя из файла («A-b-c») и кредит каталога «A & B» приводим к «A Feat. B» */
+        if(!keepFeat && f.info._glued) f.info.artist = featCredit(f.info.artist);
+        f.info.artist = keepArticle(f.info.artist, srcArtist);
         f.info.title  = (sameTitle && srcTitle && !lowerTitle) ? srcTitle : (foundTitle || srcTitle);
         f.info.source = found.source || "";
         f.info.score  = found.score || 0;
@@ -1977,7 +2025,7 @@ function add(input, pathMap){
       path: p,
       duration: 0,
       parsed: parsed,
-      info: { artist: parsed.artist, title: parsed.title, _raw: parsed._raw, status: "raw", source: "" }
+      info: { artist: parsed.artist, title: parsed.title, _raw: parsed._raw, _glued: !!parsed._glued, status: "raw", source: "" }
     };
     files.push(entry);
     inspectEntry(entry);

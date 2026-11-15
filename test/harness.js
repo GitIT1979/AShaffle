@@ -37,6 +37,8 @@ code = code.replace(/\}\)\(\);\s*$/,
   "matchScore:matchScore,cleanJunk:cleanJunk,dropVariants:dropVariants," +
   "foldMixed:foldMixed,collapseDoubles:collapseDoubles,stripSiteJunk:stripSiteJunk," +
   "altParse:altParse,altsPush:altsPush,sortAlts:sortAlts,altsFor:altsFor," +
+  "splitGluedArtist:splitGluedArtist,featCredit:featCredit,keepArticle:keepArticle," +
+  "creditKey:creditKey,isGoodMatch:isGoodMatch," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -194,6 +196,33 @@ parseCases.forEach(function(c){
   eq(p.artist, c[1], "разбор исполнителя: " + c[0]);
   eq(p.title, c[2], "разбор названия: " + c[0]);
 });
+
+/* ---------- склеенные имена и кредиты ---------- */
+{
+  eq(api.splitGluedArtist("the-black-eyed-peas-j-balvin"), "the black eyed peas j balvin", "дефисы вместо пробелов в имени");
+  eq(api.splitGluedArtist("jay-z"), "jay-z", "одиночный дефис не трогаем");
+  eq(api.splitGluedArtist("The Black Eyed Peas"), "The Black Eyed Peas", "имя с пробелами не трогаем");
+
+  const gp = api.parseTrackInfo("057 - the-black-eyed-peas-j-balvin - ritmo.mp3");
+  eq(gp.artist, "the black eyed peas j balvin", "имя из файла расклеено");
+  eq(gp._glued, true, "склеенное имя помечено");
+
+  eq(api.featCredit("Black Eyed Peas & J Balvin"), "Black Eyed Peas Feat. J Balvin", "амперсанд заменён на Feat.");
+  eq(api.featCredit("Black Eyed Peas, J Balvin & SWACQ"), "Black Eyed Peas Feat. J Balvin & SWACQ", "три участника");
+  eq(api.featCredit("Queen"), "Queen", "один исполнитель без изменений");
+
+  eq(api.keepArticle("Black Eyed Peas", "the black eyed peas j balvin"), "The Black Eyed Peas", "артикль возвращён");
+  eq(api.keepArticle("Kesha", "kesha"), "Kesha", "без артикля в файле не добавляем");
+  eq(api.keepArticle("Queen", ""), "Queen", "пустой источник не влияет");
+
+  eq(api.isGoodMatch("the black eyed peas j balvin ritmo", "Black Eyed Peas, J Balvin & SWACQ", "RITMO (Bad Boys For Life) [SWACQ Remix]"), false, "ремикс не подходит");
+  eq(api.isGoodMatch("the black eyed peas j balvin ritmo", "Black Eyed Peas & J Balvin", "RITMO (Bad Boys For Life)"), true, "сам трек подходит");
+
+  const k1 = api.creditKey("The Black Eyed Peas Feat. J Balvin", "RITMO (Bad Boys For Life)");
+  const k2 = api.creditKey("Black Eyed Peas & J Balvin", "RITMO (Bad Boys For Life)");
+  eq(k1, k2, "один и тот же кредит склеивается");
+  eq(api.creditKey("Marshmello", "FRIENDS (acoustic)") === api.creditKey("Marshmello", "Friends"), false, "акустика остаётся отдельным вариантом");
+}
 
 /* ---------- варианты одного названия ---------- */
 {
