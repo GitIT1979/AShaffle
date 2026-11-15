@@ -114,7 +114,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.39</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.41</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -228,7 +228,8 @@ var RULES = [
   { id:33, layer:"вывод",  text:"ID3 перезаписывается (TIT2, TPE1, TRCK), прочие кадры сохраняются", fn:"buildId3v24Tag" },
   { id:34, layer:"вывод",  text:"Несколько кандидатов: лучший применяется сразу, остальные доступны по кнопке ⇄", fn:"altsFor" },
   { id:35, layer:"запрос", text:"Числа-порядковые разворачиваются в слова: «на 5-м этаже» → «на пятом этаже»", fn:"expandOrdinals" },
-  { id:36, layer:"запрос", text:"Если в исполнителя попал кусок названия — вся фраза ищется как название (без дублей транслита)", fn:"phraseTitle" }
+  { id:36, layer:"запрос", text:"Если в исполнителя попал кусок названия — вся фраза ищется как название (без дублей транслита)", fn:"phraseTitle" },
+  { id:37, layer:"запрос", text:"Короткий латинский обрубок в начале имени срезается при поиске («Var Би-2» → «Би-2»); роли DJ/MC/TV не трогаются", fn:"dropJunkPrefix" }
 ];
 /* Доступ к реестру для проверок и отладки */
 if(typeof window !== "undefined") window.__ashuffleRules = function(){ return RULES; };
@@ -1755,6 +1756,18 @@ function phraseTitle(artist, title){
   });
   return expandOrdinals(out.join(" ")).replace(/\s+/g, " ").trim();
 }
+/* Короткий латинский обрубок перед кириллическим именем: «Var Би-2» → «Би-2».
+   Роли (DJ, MC, TV…) — не мусор, их не трогаем. */
+var _ROLE_PREFIX = { dj:1, mc:1, vj:1, fm:1, tv:1, am:1, pm:1, ost:1, vip:1, mp3:1, hd:1, hq:1, feat:1 };
+function dropJunkPrefix(artist){
+  var m = String(artist||"").trim().match(/^([A-Za-z]{1,4})\s+(\S.*)$/);
+  if(!m) return "";
+  var head = m[1].toLowerCase(), rest = m[2].trim();
+  if(_ROLE_PREFIX[head]) return "";
+  if(!/^[А-ЯЁа-яё]/.test(rest)) return "";
+  if(!/[а-яё]/i.test(rest)) return "";
+  return rest;
+}
 function lookupTrack(info, dur){
   /* Латинские двойники вычищаем у любых входных данных, не только из имени файла */
   var a=foldMixed(info.artist||""), t=foldMixed(info.title||""), raw=foldMixed(info._raw||"");
@@ -1847,6 +1860,18 @@ function lookupTrack(info, dur){
       steps.push(function(){
         return lookupMusicBrainzByRecording(aliasTerm).then(function(r){ return pickMusicBrainzResult(r, aliasTerm, dur); });
       });
+    }
+  }
+  /* Короткий латинский обрубок в начале имени: «Var Би-2» → «Би-2» */
+  var trimmed = dropJunkPrefix(a);
+  if(trimmed){
+    var trTerm = (trimmed + " " + (titleQ || t)).replace(/\s+/g, " ").trim();
+    if(trTerm.toLowerCase() !== qterm.toLowerCase()){
+      steps.push(guardArtist(function(){ return lookupDeezer(trTerm, dur); }, trimmed, titleQ || t));
+      steps.push(guardArtist(function(){ return lookupITunes(trTerm, dur); }, trimmed, titleQ || t));
+      steps.push(guardArtist(function(){
+        return lookupMusicBrainzByRecording(trTerm).then(function(r){ return pickMusicBrainzResult(r, trTerm, dur); });
+      }, trimmed, titleQ || t));
     }
   }
   /* Имя строчными: «жанго» → «Джанго» */
@@ -2031,6 +2056,9 @@ function verifyQueue(todo){
         /* Строчное имя в файле — мусорная запись, а не кредит: берём написание каталога */
         var srcAllLower = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();
         if(srcAllLower) keepFeat = false;
+        /* Обрубок вроде «Var» — не участник кредита, а мусор: не сохраняем его */
+        var srcTrim = dropJunkPrefix(srcArtist);
+        if(srcTrim && norm(srcTrim) === norm(found.artist)) keepFeat = false;
         /* Если в файле всё строчными ("kesha"), берём написание базы */
         var srcTitle = f.info.title || "";
         var lowerArtist = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();

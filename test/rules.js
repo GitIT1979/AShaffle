@@ -97,4 +97,10 @@ module.exports = [
 
   { id: 36, name: "вся фраза как название, дубли транслита схлопнуты", run: a =>
       a.phraseTitle("Moya Моя Любовь На 5-Ом", "Этаже") === "Моя Любовь На пятом Этаже" },
+
+  { id: 37, name: "латинский обрубок срезан, роли сохранены", run: a =>
+      a.dropJunkPrefix("Var Би-2") === "Би-2" &&
+      a.dropJunkPrefix("DJ Грув") === "" &&
+      a.dropJunkPrefix("The Beatles") === "" &&
+      a.dropJunkPrefix("Би-2") === "" },
 ];
