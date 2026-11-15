@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.27</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.29</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -191,6 +191,7 @@ var _NOISE = {
   mv:1, "m/v":1, clip:1, teaser:1, trailer:1, premiere:1, topic:1,
   hd:1, hq:1, uhd:1, "4k":1, "1080p":1, "720p":1,
   explicit:1, clean:1, censored:1, remaster:1, remastered:1, deluxe:1, edition:1,
+  radio:1, edit:1, version:1, mix:1,
   bonus:1, track:1, digital:1, mono:1, stereo:1, single:1, album:1, ep:1, ost:1, soundtrack:1,
   "премьера":1, "клип":1, "видеоклип":1, "официальный":1, "официальное":1,
   "видео":1, "саундтрек":1, "трек":1, "музыка":1
@@ -264,7 +265,7 @@ function aliasSplit(artist, title){
 }
 /* Полное совпадение названия с запросом: длительность может врать (тишина, другой мастеринг),
    но только в разумных пределах — не когда разница в минуту-две */
-var DUR_TOL_EXACT = 45;
+var DUR_TOL_EXACT = 60;
 function durOkExact(fileDur, candMs){
   if(!fileDur || !candMs) return true;
   return Math.abs(candMs / 1000 - fileDur) <= DUR_TOL_EXACT;
@@ -281,7 +282,8 @@ function stripNoiseBrackets(s){
 }
 /* «Unknown Artist», «VA» и прочие заглушки — не название */
 function isPlaceholder(s){
-  return /^(unknown(\s+(artist|track))?|va|various\s+artists|no\s+artist|none|n\/a)$/i.test(String(s||"").trim());
+  var k = String(s||"").trim().toLowerCase().replace(/[_.]+/g, " ").replace(/\s+/g, " ");
+  return /^(unknown( artist| track)?|va|various artists|no artist|none|n\/a)$/.test(k);
 }
 function isUnknownInfo(info){
   var a=(info&&info.artist)||"", t=(info&&info.title)||"";
@@ -293,7 +295,8 @@ function cleanJunk(s){
   });
   out = out
     .replace(/\s+[-–—]\s*(topic|official\s*(video|audio|music\s*video)|lyrics?|hd|hq|remaster(ed)?|single|album)\s*$/gi, "")
-    .replace(/\s*\([a-z0-9-]+\.[a-z]{2,}\)/gi, "")
+    .replace(/\s*\([^)]*\.[a-zа-я]{2,}\)/gi, "")
+    .replace(/\s*\[[^\]]*\.[a-zа-я]{2,}\]/gi, "")
     .replace(/\s+official\s+music\s+video\b/gi, "")
     .replace(/\s+music\s+video\b/gi, "")
     .replace(/\s+official\s+video\b/gi, "")
@@ -555,6 +558,8 @@ function tokenNear(a, b){
 
 /* Допуск по длительности: ремастер или тишина в начале могут добавить пару секунд */
 var DUR_TOL = 10;
+/* Ниже этого балла совпадение считается случайным: «Tyani» ≠ «Teni — HUSTLE» */
+var MIN_SCORE = 0.5;
 function durOk(fileDur, candMs){
   if(!fileDur || !candMs) return true;
   return Math.abs(candMs/1000 - fileDur) <= DUR_TOL;
@@ -759,6 +764,7 @@ function pickMusicBrainzResult(recordings, query, dur){
     var cleanTitle = String(mbTitle).trim();
     var s = matchScore(query, mbArtist, mbTitle, dur, rec.length);
     altsPush(picked, { artist: mbArtist, title: cleanTitle, source: "MusicBrainz", score: s, dur: rec.length || 0 });
+    if(s < MIN_SCORE) continue;
     if(s > bestScore + 1e-9 || (best && Math.abs(s - bestScore) <= 1e-9 && cleanTitle.length < best.title.length)){
       bestScore = s;
       best = { artist: mbArtist, title: cleanTitle, source: "MusicBrainz", score: s };
@@ -804,6 +810,7 @@ function lookupDeezer(term, dur, loose){
       if(!m) return;
       var s = matchScore(term, t.artist.name, t.title, dur, (t.duration || 0) * 1000);
       var cand = { artist: t.artist.name, title: stripFeat(String(t.title).trim()), source: "Deezer", score: s, dur: (t.duration || 0) * 1000 };
+      if(s < MIN_SCORE) return;
       altsPush(picked, cand);
       if(s > best + 1e-9 || (out && Math.abs(s - best) <= 1e-9 && cand.title.length < out.title.length)){
         best = s;
@@ -858,6 +865,7 @@ function lookupITunes(term, dur, loose){
               var cleanTitle = stripFeat(res.trackName);
               var sc = matchScore(term, res.artistName, res.trackName, dur, res.trackTimeMillis);
               var cand2 = { artist: res.artistName, title: cleanTitle, source: "iTunes", score: sc, dur: res.trackTimeMillis || 0 };
+              if(sc < MIN_SCORE) continue;
               altsPush(picked, cand2);
               if(sc > bestScore + 1e-9 || (out && Math.abs(sc - bestScore) <= 1e-9 && cleanTitle.length < out.title.length)){
                 bestScore = sc;
@@ -1608,8 +1616,12 @@ function shaveGluedLetter(artist){
 function lookupTrack(info, dur){
   /* Латинские двойники вычищаем у любых входных данных, не только из имени файла */
   var a=foldMixed(info.artist||""), t=foldMixed(info.title||""), raw=foldMixed(info._raw||"");
+  /* «unknown_artist» — не исполнитель: ищем по одному названию */
+  if(isPlaceholder(a)) a = "";
+  /* Заглушка или непроизносимая запись («花電車») — ищем по одному названию */
+  if(isPlaceholder(a) || !tokens(a).length) a = "";
   var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";
-  var term=(primary || raw).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
+  var term=(primary || raw || (a ? "" : t)).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
   if(!term) return Promise.resolve(null);
   if(!primary && (!t || t === "unknown_track")) return Promise.resolve(null);
 
@@ -1643,6 +1655,14 @@ function lookupTrack(info, dur){
     steps.push(guardArtist(function(){ return lookupITunes(term, dur); }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   /* Запрос без исполнителя не должен подменять исполнителя: сверяем с тем, что в файле */
+  function guardTitle(expectedTitle, fn){
+    return function(){
+      return fn().then(function(f){
+        if(!f) return f;
+        return isGoodMatchFlex(expectedTitle, "", f.title || "") ? f : null;
+      });
+    };
+  }
   function guardArtist(fn, expected, expectedTitle){
     return function(){
       return fn().then(function(f){
@@ -1721,13 +1741,13 @@ function lookupTrack(info, dur){
   if(shortTerm){ pushDeezer(shortTerm); pushITunes(shortTerm); }
   /* Неполный исполнитель: первое слово имени */
   if(shortArtistTerm){ pushDeezer(shortArtistTerm); pushITunes(shortArtistTerm); }
-  /* Совсем без исполнителя — по одному названию, но исполнителя не подменяем */
+  /* Совсем без исполнителя — по одному названию; название кандидата тоже проверяем */
   if(titleOnly){
-    steps.push(guardArtist(function(){ return lookupDeezer(titleOnly, dur); }, a));
-    steps.push(guardArtist(function(){ return lookupITunes(titleOnly, dur); }, a));
-    steps.push(guardArtist(function(){
+    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupDeezer(titleOnly, dur); }, a)));
+    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupITunes(titleOnly, dur); }, a)));
+    steps.push(guardTitle(titleOnly, guardArtist(function(){
       return lookupMusicBrainzByRecording(titleOnly).then(function(r){ return pickMusicBrainzResult(r, titleOnly, dur); });
-    }, a));
+    }, a)));
   }
   /* Последняя попытка: первое слово исполнителя + хвост названия.
      В тегах граница бывает сдвинута: «Alians- Звуки на» + «заре» → «Alians на заре» */
@@ -1754,6 +1774,11 @@ function lookupTrack(info, dur){
     });
   }
 
+  /* Без исполнителя каждый шаг обязан подтвердить название */
+  if(!a && steps.length){
+    var tq = titleQ || t;
+    steps = steps.map(function(fn){ return guardTitle(tq, fn); });
+  }
   var i=0;
   function next(){
     if(i>=steps.length) return Promise.resolve(null);
@@ -1823,6 +1848,9 @@ function verifyQueue(todo){
         });
         var extraMeaningful = extraTok.some(function(w){ return w.length > 2 && !MODIFIERS[w]; });
         if(subset && fndTok.length < srcTok.length && extraMeaningful) keepFeat = true;
+        /* Строчное имя в файле — мусорная запись, а не кредит: берём написание каталога */
+        var srcAllLower = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();
+        if(srcAllLower) keepFeat = false;
         /* Если в файле всё строчными ("kesha"), берём написание базы */
         var srcTitle = f.info.title || "";
         var lowerArtist = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();
