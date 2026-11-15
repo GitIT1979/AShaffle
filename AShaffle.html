@@ -116,7 +116,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.49</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.50</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1651,11 +1651,11 @@ function rowHtml(f,i){
     '<span class="n">'+idx+'</span>'+
     '<div class="fmain">'+
       '<div class="top">'+
-        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать (можно просто щёлкнуть по строке)">'+(playingId===f.id?'⏸':'▶')+'</button>'+
         '<span class="nm" title="'+esc(f.path || f.name)+'">'+esc(f.name)+'</span>'+
         '<span class="ex">'+e+'</span>'+
         '<button class="ic" data-act="edit" data-id="'+f.id+'" type="button" title="Исправить исполнителя и название">✎</button>'+
         '<button class="ic rm" data-act="rm" data-id="'+f.id+'" type="button" title="Убрать из списка">✕</button>'+
+        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать (можно просто щёлкнуть по строке)">'+(playingId===f.id?'⏸':'▶')+'</button>'+
       '</div>'+
       '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
         (info.alts && info.alts.length > 1 ? '<button class="bd alt" data-act="alt" data-id="'+f.id+'" type="button" title="'+esc(altTip(info))+'" >⇄ '+((info.altIdx||0)+1)+'/'+info.alts.length+'</button>' : '')+
@@ -1739,7 +1739,7 @@ function drawResults(){
     var tag=r.isMp3?('<span class="sz">TRCK='+r.trackNum+'</span>'):'<span class="sz">—</span>';
     var src=r.source?(' <span class="sz" style="font-size:10px;opacity:.7">'+esc(r.source)+'</span>'):'';
     var d=document.createElement("div");d.className="res-item";
-    d.innerHTML='<button class="ic" data-play="'+i+'" type="button" title="Прослушать">'+(playingRes===i?'⏸':'▶')+'</button><span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span>'+src+'<span class="ar">'+esc(r.artist||"—")+'</span>'+tag+'<span class="sz">'+fmtSize(r.size)+'</span><button class="btn sm" data-i="'+i+'" type="button">💾</button>';
+    d.innerHTML='<span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span>'+src+'<span class="ar">'+esc(r.artist||"—")+'</span>'+tag+'<span class="sz">'+fmtSize(r.size)+'</span><button class="btn sm" data-i="'+i+'" type="button">💾</button><button class="ic" data-play="'+i+'" type="button" title="Прослушать">'+(playingRes===i?'⏸':'▶')+'</button>';
     L.appendChild(d);
   });
   $("rcnt").textContent=results.length;
