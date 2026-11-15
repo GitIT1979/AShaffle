@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.20</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.21</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1607,6 +1607,9 @@ function lookupTrack(info, dur){
   } else {
     if(primary) pushMBPrecise();
     pushMBTerm(qterm);
+    /* Латиница ищется сразу в каталогах: обратный транслит — уже догадка */
+    pushDeezer(qterm);
+    pushITunes(qterm);
   }
   /* Второй проход латиницей: «Дельфин» → «Delfin» */
   var trq=translit(qterm);
@@ -1624,10 +1627,6 @@ function lookupTrack(info, dur){
   if(qfold && qfold !== qterm){ pushDeezer(qfold); pushITunes(qfold); pushMBTerm(qfold); }
   var qdup = collapseDoubles(qfold);
   if(qdup && qdup !== qfold){ pushDeezer(qdup); pushITunes(qdup); pushMBTerm(qdup); }
-  if(!cyr){
-    pushDeezer(qterm);
-    pushITunes(qterm);
-  }
   /* Известные переводы имён групп: technology → Технология */
   var alias = aliasFor(a);
   if(alias && alias !== a){
