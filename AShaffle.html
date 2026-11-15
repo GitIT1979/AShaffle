@@ -640,17 +640,20 @@ function tokenNear(a, b){
 var _VERSION_WORDS = /(remix|mix|live|radio|edit|version|acoustic|instrumental|extended|demo|cover|bootleg|remaster)/i;
 function versionTail(found, info){
   if(!found || !found.title) return "";
-  var words = (String(info.artist||"") + " " + String(info.title||"")).replace(/\s+/g, " ").trim().split(/\s+/);
-  var pool = words.filter(Boolean).map(function(w){ return { w:w, key: tokens(w).join("") }; });
+  /* Работаем по словам: дефисы внутри слова не должны ломать вычитание */
+  var pool = tokens(String(info.artist||"") + " " + String(info.title||""));
   function consume(str){
     tokens(str).forEach(function(t){
-      for(var i=0;i<pool.length;i++){ if(pool[i] && pool[i].key === t){ pool[i] = null; return; } }
+      var at = pool.indexOf(t);
+      if(at >= 0){ pool.splice(at, 1); return; }
+      for(var i=0;i<pool.length;i++){
+        if(tokenNear(pool[i], t)){ pool.splice(i, 1); return; }
+      }
     });
   }
   consume(found.artist || "");
   consume(found.title || "");
-  var rest = pool.filter(Boolean).map(function(x){ return x.w; })
-                 .filter(function(w){ return !/^(feat|ft)\.?$/i.test(w) && !/^[-–—]$/.test(w); });
+  var rest = pool.filter(function(w){ return w !== "feat" && w !== "ft" && w !== "and"; });
   if(!rest.length || rest.length > 6) return "";
   var joined = rest.join(" ");
   if(!_VERSION_WORDS.test(joined)) return "";
