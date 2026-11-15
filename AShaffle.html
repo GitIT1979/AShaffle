@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.16</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.17</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1630,6 +1630,9 @@ function verifyQueue(todo){
       /* Латиницу пробуем заменить кириллическим написанием того же трека */
       return preferCyrillic(found, f.duration, f.info.artist);
     }).then(function(found){
+      /* Исполнитель уже русский, а название ещё латиницей */
+      return preferCyrillicTitle(found, f.duration, f.info.artist);
+    }).then(function(found){
       /* Сомнительное совпадение перепроверяем в Discogs */
       if(!found || found.score >= 0.8) return found;
       return discogsConfirm(found.artist, found.title).then(function(ok){
@@ -1711,6 +1714,38 @@ function preferCyrillic(found, dur, sourceArtist){
     if(alt && alt.artist && /[А-Яа-яЁё]/.test(alt.artist)){ alt.alts = mergeAlts(alt.alts, found.alts); return alt; }
     return lookupITunes(term, dur).then(function(alt2){
       if(alt2 && alt2.artist && /[А-Яа-яЁё]/.test(alt2.artist)){ alt2.alts = mergeAlts(alt2.alts, found.alts); return alt2; }
+      return found;
+    });
+  }).catch(function(){ return found; });
+}
+
+/* Название записано латиницей, а трек русский — ищем кириллическое написание */
+function preferCyrillicTitle(found, dur, sourceArtist){
+  if(!found || !found.title) return Promise.resolve(found);
+  var title = found.title, artist = found.artist || "";
+  if(/[А-Яа-яЁё]/.test(title)) return Promise.resolve(found);
+  /* Только если есть признак русского трека: кириллица в исполнителе */
+  if(!/[А-Яа-яЁё]/.test(artist + " " + (sourceArtist || ""))) return Promise.resolve(found);
+  var cyrTitle = untranslit(title);
+  if(!cyrTitle || !/[а-яё]{3}/.test(cyrTitle)) return Promise.resolve(found);
+  var cyrArtist = /[А-Яа-яЁё]/.test(artist) ? artist : untranslit(artist);
+  if(!cyrArtist || !/[а-яё]/.test(cyrArtist)) return Promise.resolve(found);
+  /* Название должно быть тем же словом, только кириллицей */
+  function sameTitle(c){
+    return !!c && !!c.title && /[А-Яа-яЁё]/.test(c.title) && isGoodMatchLoose(title, "", translit(c.title));
+  }
+  function cyrArtistOk(c){ return !!c && !!c.artist && /[А-Яа-яЁё]/.test(c.artist); }
+  var term = (cyrArtist + " " + cyrTitle).trim();
+  return lookupDeezer(term, dur, true).then(function(alt){
+    if(alt && cyrArtistOk(alt) && sameTitle(alt)){
+      alt.alts = mergeAlts(alt.alts, found.alts);
+      return alt;
+    }
+    return lookupITunes(term, dur, true).then(function(alt2){
+      if(alt2 && cyrArtistOk(alt2) && sameTitle(alt2)){
+        alt2.alts = mergeAlts(alt2.alts, found.alts);
+        return alt2;
+      }
       return found;
     });
   }).catch(function(){ return found; });
