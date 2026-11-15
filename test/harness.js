@@ -38,7 +38,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "foldMixed:foldMixed,collapseDoubles:collapseDoubles,stripSiteJunk:stripSiteJunk," +
   "altParse:altParse,altsPush:altsPush,sortAlts:sortAlts,altsFor:altsFor," +
   "splitGluedArtist:splitGluedArtist,featCredit:featCredit,keepArticle:keepArticle," +
-  "creditKey:creditKey,isGoodMatch:isGoodMatch,tailOk:tailOk," +
+  "creditKey:creditKey,isGoodMatch:isGoodMatch,tailOk:tailOk,aliasFor:aliasFor," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -196,6 +196,16 @@ parseCases.forEach(function(c){
   eq(p.artist, c[1], "разбор исполнителя: " + c[0]);
   eq(p.title, c[2], "разбор названия: " + c[0]);
 });
+
+/* ---------- словарь имён групп ---------- */
+{
+  eq(api.aliasFor("technology"), "Технология", "словарное имя");
+  eq(api.aliasFor("Technology"), "Технология", "регистр не важен");
+  eq(api.aliasFor("Technology."), "Технология", "точка в конце не мешает");
+  eq(api.aliasFor("technology feat. X"), "Технология", "приглашённый участник не мешает");
+  eq(api.aliasFor("technologic"), "", "чужое слово по префиксу не подставляем");
+  eq(api.aliasFor(""), "", "пустой исполнитель");
+}
 
 /* ---------- хвост названия ---------- */
 {

@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.21</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.22</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -238,11 +238,14 @@ var _ALIASES = {
   "billi ailish": "Билли Айлиш"
 };
 function aliasFor(artist){
-  var k = String(artist||"").toLowerCase().replace(/\s+/g," ").trim();
+  var k = String(artist||"").toLowerCase().replace(/\s+/g, " ").replace(/[\s.,;:!?]+$/, "").trim();
   if(!k) return "";
   if(_ALIASES[k]) return _ALIASES[k];
   var keys = Object.keys(_ALIASES);
-  for(var i=0;i<keys.length;i++){ if(k.indexOf(keys[i]) === 0) return _ALIASES[keys[i]]; }
+  for(var i=0;i<keys.length;i++){
+    /* Только по границе слова: «technology feat. X» — да, «technologic» — нет */
+    if(k.indexOf(keys[i] + " ") === 0) return _ALIASES[keys[i]];
+  }
   return "";
 }
 /** «(Bonus)», «(Remastered)» — не часть названия */
@@ -1611,6 +1614,19 @@ function lookupTrack(info, dur){
     pushDeezer(qterm);
     pushITunes(qterm);
   }
+  /* Известные переводы имён групп: technology → Технология.
+     Словарь — не догадка, поэтому спрашиваем сразу после основного запроса */
+  var alias = aliasFor(a);
+  if(alias && alias !== a){
+    var aliasTerm = (alias + " " + (titleQ || t)).trim();
+    if(aliasTerm.toLowerCase() !== qterm.toLowerCase()){
+      steps.push(function(){ return lookupDeezer(aliasTerm, dur); });
+      steps.push(function(){ return lookupITunes(aliasTerm, dur); });
+      steps.push(function(){
+        return lookupMusicBrainzByRecording(aliasTerm).then(function(r){ return pickMusicBrainzResult(r, aliasTerm, dur); });
+      });
+    }
+  }
   /* Второй проход латиницей: «Дельфин» → «Delfin» */
   var trq=translit(qterm);
   if(trq && trq !== qterm.toLowerCase()) pushMBTerm(trq);
@@ -1629,15 +1645,7 @@ function lookupTrack(info, dur){
   if(qdup && qdup !== qfold){ pushDeezer(qdup); pushITunes(qdup); pushMBTerm(qdup); }
   /* Известные переводы имён групп: technology → Технология */
   var alias = aliasFor(a);
-  if(alias && alias !== a){
-    var aliasTerm = (alias + " " + (titleQ || t)).trim();
-    steps.push(function(){ return lookupDeezer(aliasTerm, dur); });
-    steps.push(function(){ return lookupITunes(aliasTerm, dur); });
-    steps.push(function(){
-      return lookupMusicBrainzByRecording(aliasTerm).then(function(r){ return pickMusicBrainzResult(r, aliasTerm, dur); });
-    });
-  }
-  /* Обрезанное имя файла («направл» вместо «направление») — короткий запрос */
+  /* Усечённое имя файла сокращают постепенно */
   if(shortTerm){ pushDeezer(shortTerm); pushITunes(shortTerm); }
   /* Неполный исполнитель: первое слово имени */
   if(shortArtistTerm){ pushDeezer(shortArtistTerm); pushITunes(shortArtistTerm); }
