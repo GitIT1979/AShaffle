@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.24</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.25</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -685,6 +685,9 @@ function creditKey(artist, title){
 }
 function altsPush(list, cand){
   if(!cand || !cand.artist || !cand.title) return;
+  /* «(Bonus)», сайты и прочее — не часть названия, иначе дубликаты не склеятся */
+  var clean = stripNoiseBrackets(stripSiteJunk(String(cand.title)));
+  cand = { artist: cand.artist, title: clean || cand.title, source: cand.source, score: cand.score, dur: cand.dur };
   /* Сравниваем по набору слов: «The Black Eyed Peas Feat. J Balvin» и
      «Black Eyed Peas & J Balvin» — один и тот же кредит */
   var k = creditKey(cand.artist, cand.title);
