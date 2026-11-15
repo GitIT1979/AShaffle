@@ -114,7 +114,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.45</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.46</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -232,7 +232,8 @@ var RULES = [
   { id:37, layer:"запрос", text:"Короткий латинский обрубок в начале имени срезается при поиске («Var Би-2» → «Би-2»); роли DJ/MC/TV не трогаются", fn:"dropJunkPrefix" },
   { id:38, layer:"запрос", text:"Префиксный перебор: первые 4–6 слов фразы, кредит «feat» из запроса убирается", fn:"stripFeatCredit" },
   { id:39, layer:"проверка", text:"Если в файле есть пометка версии (remix/live/radio), допуск по длительности расширяется до 60 с", const:"DUR_TOL_EXACT" },
-  { id:40, layer:"вывод",  text:"Хвост версии из исходной фразы сохраняется в названии: (Get Better Radio Remix)", fn:"versionTail" }
+  { id:40, layer:"вывод",  text:"Хвост версии из исходной фразы сохраняется в названии: (Get Better Radio Remix)", fn:"versionTail" },
+  { id:41, layer:"запрос", text:"Если название — языковой огрызок (eng/rus), пробуем того же исполнителя и перевёрнутый порядок слов", inFn:"lookupTrack" }
 ];
 /* Доступ к реестру для проверок и отладки */
 if(typeof window !== "undefined") window.__ashuffleRules = function(){ return RULES; };
@@ -1916,6 +1917,17 @@ function lookupTrack(info, dur){
         return lookupMusicBrainzByRecording(trTerm).then(function(r){ return pickMusicBrainzResult(r, trTerm, dur); });
       }, trimmed, titleQ || t));
     }
+  }
+  /* Название — языковой огрызок («eng»), а в исполнителе два слова:
+     пробуем того же исполнителя и перевёрнутый порядок («intelligency august») */
+  var titleJunk = /^(eng|rus|ru|en|ukr|bel)$/i.test(String(t||"").trim());
+  var aw = String(a||"").split(/\s+/).filter(Boolean);
+  if(titleJunk && aw.length >= 2 && aw.length <= 3){
+    var lastWord = aw[aw.length-1];
+    var revTerm = aw.slice().reverse().join(" ");
+    steps.push(guardArtist(function(){ return lookupDeezer(a, dur); }, lastWord, t));
+    steps.push(guardArtist(function(){ return lookupDeezer(revTerm, dur); }, lastWord, t));
+    steps.push(guardArtist(function(){ return lookupITunes(revTerm, dur); }, lastWord, t));
   }
   /* Имя строчными: «жанго» → «Джанго» */
   var capA = capitalizeArtist(a);
