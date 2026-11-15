@@ -103,7 +103,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.13</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.15</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -486,6 +486,16 @@ function durOk(fileDur, candMs){
   return Math.abs(candMs/1000 - fileDur) <= DUR_TOL;
 }
 /* Оценка кандидата: покрытие запроса, чистота лишних слов, близость длительности */
+/* Мягкое сравнение: все слова запроса есть в кандидате, лишние допускаются */
+function isGoodMatchLoose(query, artist, title){
+  var q = unique(tokens(foldMixed(query))), r = unique(tokens(foldMixed((artist||"")+" "+(title||""))));
+  var sigQ = q.filter(function(w){ return w.length > 2 && !MODIFIERS[w]; });
+  if(!sigQ.length) return true;
+  var ok = sigQ.every(function(w){ return r.some(function(x){ return x === w || tokenNear(w, x); }); });
+  if(!ok) return false;
+  for(var k in SUSPICIOUS){ if(r.indexOf(k) >= 0 && q.indexOf(k) < 0) return false; }
+  return true;
+}
 function matchScore(query, artist, title, fileDur, candMs){
   /* Приводим обе стороны к латинице, иначе «Моя» и «Moya» не совпадут */
   var q = unique(tokens(translit(foldMixed(query)))), r = unique(tokens(translit(foldMixed((artist||"") + " " + (title||"")))));
@@ -646,7 +656,7 @@ function _jsonp(url, cbParam, timeoutMs){
     document.body.appendChild(script);
   });
 }
-function lookupDeezer(term, dur){
+function lookupDeezer(term, dur, loose){
   if(!term) return Promise.resolve(null);
   var key = "dz|" + Math.round(dur||0) + "|" + term.toLowerCase();
   if(Object.prototype.hasOwnProperty.call(_dzCache, key)) return Promise.resolve(_dzCache[key]);
@@ -657,7 +667,8 @@ function lookupDeezer(term, dur){
       if(!t || !t.title || !t.artist || !t.artist.name) return;
       if(isPlaceholder(t.artist.name) || isPlaceholder(t.title)) return;
       if(!durOk(dur, (t.duration || 0) * 1000)) return;
-      if(!isGoodMatchFlex(term, t.artist.name, t.title)) return;
+      var m = loose ? isGoodMatchLoose(term, t.artist.name, t.title) : isGoodMatchFlex(term, t.artist.name, t.title);
+      if(!m) return;
       var s = matchScore(term, t.artist.name, t.title, dur, (t.duration || 0) * 1000);
       if(s > best + 1e-9 || (out && Math.abs(s - best) <= 1e-9 && String(t.title).length < out.title.length)){
         best = s;
@@ -685,7 +696,7 @@ function discogsConfirm(artist, title){
     })
     .catch(function(){ _dcCache[key] = false; return false; });
 }
-function lookupITunes(term, dur){
+function lookupITunes(term, dur, loose){
   if(!CAN_ITUNES) return Promise.resolve(null);
   if(!term) return Promise.resolve(null);
   var key = "it|" + Math.round(dur||0) + "|" + term.toLowerCase();
@@ -706,7 +717,8 @@ function lookupITunes(term, dur){
               if(isPlaceholder(res.artistName) || isPlaceholder(res.trackName)) continue;
               if(!/[a-zA-Zа-яА-ЯёЁ]/.test(res.trackName)) continue;
               if(!durOk(dur, res.trackTimeMillis)) continue;
-              if(!isGoodMatchFlex(term, res.artistName, res.trackName)) continue;
+              var m2 = loose ? isGoodMatchLoose(term, res.artistName, res.trackName) : isGoodMatchFlex(term, res.artistName, res.trackName);
+              if(!m2) continue;
               var cleanTitle = stripFeat(res.trackName);
               var sc = matchScore(term, res.artistName, res.trackName, dur, res.trackTimeMillis);
               if(sc > bestScore + 1e-9 || (out && Math.abs(sc - bestScore) <= 1e-9 && cleanTitle.length < out.title.length)){
@@ -1489,7 +1501,12 @@ function lookupTrack(info, dur){
   if(trq && trq !== qterm.toLowerCase()) pushMBTerm(trq);
   /* Третий проход кириллицей: «Dabro» → «дабро» */
   var unq=untranslit(qterm);
-  if(unq && unq !== qterm.toLowerCase() && /[а-яё]/.test(unq)) pushMBTerm(unq);
+  if(unq && unq !== qterm.toLowerCase() && /[а-яё]/.test(unq)){
+    /* Русские названия ищем и в каталогах, не только в MusicBrainz */
+    steps.push(function(){ return lookupDeezer(unq, dur, true); });
+    steps.push(function(){ return lookupITunes(unq, dur, true); });
+    pushMBTerm(unq);
+  }
   /* Смешанная письменность и лишние буквы — пробуем исправленный запрос */
   var qfold = foldMixed(qterm);
   if(qfold && qfold !== qterm){ pushDeezer(qfold); pushITunes(qfold); pushMBTerm(qfold); }
