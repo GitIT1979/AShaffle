@@ -105,7 +105,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.17</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.18</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -1422,6 +1422,7 @@ function rowHtml(f,i){
         (info.alts && info.alts.length > 1 ? '<button class="bd alt" data-act="alt" data-id="'+f.id+'" type="button" title="'+esc(altTip(info))+'" >⇄ '+((info.altIdx||0)+1)+'/'+info.alts.length+'</button>' : '')+
         (info.fromTags && info.status==="raw" ? '<span class="bd tg" title="Исполнитель и название взяты из тега файла">тег</span>' : '')+
         (info.status==="none" ? '<button class="bd nn" data-act="edit" data-id="'+f.id+'" type="button" title="Ничего не нашлось — исправьте вручную">✎ исправить</button>' : '')+
+        (isUnknownInfo(info) ? '<span class="bd tg" title="В файле нет ни исполнителя, ни названия — имя не выдумываем, осталось исходное. Узнать можно только на слух.">нет данных</span>' : '')+
         (info.alt ? '<span class="bd" title="Имя прочитано с конца: исполнитель был последней частью">↔</span>' : '')+
         (dir ? '<span class="dir" title="'+esc(f.path)+'">'+esc(dir)+'</span>' : '')+
         (f.duration ? '<span class="dur">'+fmtDur(f.duration)+'</span>' : '')+
@@ -1914,6 +1915,8 @@ function startShuffle(useNumbered){
     var isMp3=ext(f.name)==="mp3";
     var extPart=(f.name.match(/\.[^.]+$/) || [""])[0];
     var baseName=isUnknownInfo(f.info) ? f.name : makeName(f.info, extPart, null);
+    /* У имени без данных свой номер уже может быть — второй не добавляем */
+    if(useNumbered && isUnknownInfo(f.info)) baseName = baseName.replace(/^\d{1,3}\s*[-.]\s*/, "");
     var finalName=uniqueName(useNumbered ? (pad3(num)+" - "+baseName) : baseName);
 
     console.log("Rename: "+f.name+" → "+finalName);
