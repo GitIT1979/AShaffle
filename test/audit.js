@@ -91,10 +91,10 @@ function buildInfo(name, tags) {
   };
   if (tags) {
     if (api.usefulTag(tags.artist) && api.norm(tags.artist) !== api.norm(info.artist)) {
-      info.artist = api.stripSiteJunk(api.stripNamePrefix(api.foldMixed(tags.artist.trim())));
+      info.artist = api.stripSiteJunk(api.foldMixed(api.stripNamePrefix(tags.artist.trim())));
     }
     if (api.usefulTag(tags.title) && api.norm(tags.title) !== api.norm(info.title)) {
-      info.title = api.stripNoiseBrackets(api.stripSiteJunk(api.stripNamePrefix(api.foldMixed(tags.title.trim()))));
+      info.title = api.stripNoiseBrackets(api.stripSiteJunk(api.foldMixed(api.stripNamePrefix(tags.title.trim()))));
     }
     const pulled = api.pullCreditFromTitle(info.artist, info.title);
     if (pulled) { info.artist = pulled.artist; info.title = pulled.title; }

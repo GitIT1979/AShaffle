@@ -26,7 +26,7 @@ let code = m[1];
 if (!/\}\)\(\);\s*$/.test(code)) throw new Error("неожиданное окончание скрипта");
 code = code.replace(/\}\)\(\);\s*$/,
   "globalThis.__api={parseTrackInfo:parseTrackInfo,makeName:makeName," +
-  "stripTrackPrefix:stripTrackPrefix,safeNamePart:safeNamePart,trySplit:trySplit," +
+  "stripTrackPrefix:stripTrackPrefix,safeNamePart:safeNamePart,trySplit:trySplit,stripNamePrefix:stripNamePrefix," +
   "buildZipBlob:buildZipBlob,makeRenamedFile:makeRenamedFile," +
   "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext," +
   "decodeTextFrame:decodeTextFrame,readMp3Tags:readMp3Tags,translit:translit,durOk:durOk," +
@@ -41,7 +41,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "creditKey:creditKey,isGoodMatch:isGoodMatch,tailOk:tailOk,aliasFor:aliasFor," +
   "aliasSplit:aliasSplit,nameExact:nameExact,durOkExact:durOkExact," +
   "pullCreditFromTitle:pullCreditFromTitle,creditGaps:creditGaps," +
-  "shaveGluedLetter:shaveGluedLetter," +
+  "shaveGluedLetter:shaveGluedLetter,capitalizeArtist:capitalizeArtist," +
   "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
   "rowHtml:rowHtml};\n})();");
 
@@ -210,6 +210,12 @@ parseCases.forEach(function(c){
   eq(api.shaveGluedLetter("Джанго"), "", "нормальное имя не трогаем");
   eq(api.shaveGluedLetter("Ёлка"), "", "одна буква в начале имени — не мусор");
   eq(api.shaveGluedLetter("G-Eazy"), "", "латиница с дефисом не трогаем");
+  eq(api.capitalizeArtist("жанго"), "Жанго", "строчное имя получает заглавную");
+  eq(api.aliasFor("жанго"), "Джанго", "строчный жанго из словаря");
+  eq(api.capitalizeArtist("g-eazy"), "G-Eazy", "дефис тоже граница слова");
+  eq(api.capitalizeArtist("Джанго"), "", "имя с заглавной не трогаем");
+  eq(api.capitalizeArtist("INNA"), "", "капс не трогаем");
+  eq(api.stripNamePrefix("UYTДжанго"), "Джанго", "префикс срезан до склейки двойников");
 
   const pc = api.pullCreditFromTitle("g-eazy", "and halsey-him and i");
   eq(pc && pc.artist, "g-eazy and halsey", "продолжение исполнителя возвращено");
