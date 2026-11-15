@@ -174,6 +174,27 @@ eq(api.stripSiteJunk("Song [zaycev.net]"), "Song", "сайт в квадратн
 eq(api.stripSiteJunk("Song (Live)"), "Song (Live)", "обычные скобки не трогаем");
 eq(api.isGoodMatchFlex("Bетер меняет направление", "Ветер меняет направление", ""), true, "матч при смешанной письменности");
 
+/* ---------- правила разбора на реальных именах ---------- */
+const parseCases = [
+  ["KR Виктор Цой - Красно-жёлтые дни.mp3", "Виктор Цой", "Красно-жёлтые дни"],
+  ["023 - KR Виктор Цой - Красно-жёлтые дни.mp3", "Виктор Цой", "Красно-жёлтые дни"],
+  ["TVВиктор Цой - Группа крови.mp3", "Виктор Цой", "Группа крови"],
+  ["AQF жанго - Метель.mp3", "жанго", "Метель"],
+  ["UYTДжанго - Вчера Сегодня Завтра.mp3", "Джанго", "Вчера Сегодня Завтра"],
+  ["Sерьга - Детское сердце.mp3", "Серьга", "Детское сердце"],
+  ["technology - Странные танцы.mp3", "technology", "Странные танцы"],
+  ["august-intelligency-eng.mp3", "august", "intelligency"],
+  ["Egor Крид feat. Филипп Киркоров - Цвет Настроения Чёрный.mp3", "Egor Крид feat. Филипп Киркоров", "Цвет Настроения Чёрный"],
+  ["kesha_-_tik_tok_(vmuzone.com).mp3", "kesha", "tik tok"],
+  ["Body To Body [ backingtrackx.com ].mp3", "", "Body To Body"],
+  ["Bohemian Rhapsody.mp3", "", "Bohemian Rhapsody"],
+];
+parseCases.forEach(function(c){
+  const p = api.parseTrackInfo(c[0]);
+  eq(p.artist, c[1], "разбор исполнителя: " + c[0]);
+  eq(p.title, c[2], "разбор названия: " + c[0]);
+});
+
 /* ---------- ZIP ---------- */
 (async function () {
   /* ---------- чтение тегов ---------- */
