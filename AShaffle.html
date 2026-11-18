@@ -64,6 +64,15 @@ button.bd{cursor:pointer;font:inherit;font-size:10.5px}
 @keyframes flashRow{0%{background:#fde68a}100%{background:transparent}}
 .toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,12px);max-width:88vw;padding:9px 16px;border-radius:10px;background:rgba(24,24,27,.92);color:#fff;font-size:12.5px;line-height:1.35;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .18s ease, transform .18s ease;z-index:60;text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+/* Строка проигрывания */
+.pbar{position:fixed;left:0;right:0;bottom:0;display:none;align-items:center;gap:10px;padding:9px 14px;background:rgba(24,24,27,.96);color:#fff;z-index:70;font-size:12px;box-shadow:0 -6px 20px rgba(0,0,0,.18)}
+.pbar.show{display:flex}
+.pbar .pn{flex:0 1 auto;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.95}
+.pbar #pbs{flex:1 1 auto;min-width:90px;accent-color:#f59e0b;cursor:pointer}
+.pbar .pt{flex:0 0 auto;font-variant-numeric:tabular-nums;opacity:.85}
+.pbar .ic{color:#fff}
+.pbar .ic:hover{background:rgba(255,255,255,.14);color:#fff}
+body.has-pbar .toast{bottom:62px}
 .dur{font-size:11px;color:var(--m);font-family:Consolas,monospace;margin-left:auto}
 .dir{font-size:11px;color:var(--m);font-family:Consolas,monospace;padding:0 6px;border-left:1px solid var(--b);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 [data-theme=dark] .bd.tg{color:#7dd3fc;background:#0c2a3a;border-color:transparent}
@@ -116,7 +125,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.50</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.56</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -133,6 +142,13 @@ h3{margin:0 0 10px;font-size:15px}
 </div>
 <div class="fl" id="list"></div>
 <div class="toast" id="st" role="status" aria-live="polite"></div>
+<div class="pbar" id="pbar">
+  <span class="pn" id="pbn">—</span>
+  <button class="ic" id="pbp" type="button" title="Пауза">⏸</button>
+  <input type="range" id="pbs" min="0" max="1000" value="0" step="1" aria-label="Позиция трека">
+  <span class="pt" id="pbt">0:00</span>
+  <button class="ic" id="pbx" type="button" title="Остановить">✕</button>
+</div>
 <audio id="player" preload="none"></audio>
 </div>
 
@@ -235,7 +251,8 @@ var RULES = [
   { id:38, layer:"запрос", text:"Префиксный перебор: первые 4–6 слов фразы, кредит «feat» из запроса убирается", fn:"stripFeatCredit" },
   { id:39, layer:"проверка", text:"Если в файле есть пометка версии (remix/live/radio), допуск по длительности расширяется до 60 с", const:"DUR_TOL_EXACT" },
   { id:40, layer:"вывод",  text:"Хвост версии из исходной фразы сохраняется в названии: (Get Better Radio Remix)", fn:"versionTail" },
-  { id:41, layer:"запрос", text:"Если название — языковой огрызок (eng/rus), пробуем того же исполнителя и перевёрнутый порядок слов", inFn:"lookupTrack" }
+  { id:41, layer:"запрос", text:"Если название — языковой огрызок (eng/rus), пробуем того же исполнителя и перевёрнутый порядок слов", inFn:"lookupTrack" },
+  { id:42, layer:"проверка", text:"Ручная правка и выбранный вариант запоминаются по имени файла и применяются без интернета", fn:"memGet" }
 ];
 /* Доступ к реестру для проверок и отладки */
 if(typeof window !== "undefined") window.__ashuffleRules = function(){ return RULES; };
@@ -307,6 +324,8 @@ var _ALIASES = {
   "жанго": "Джанго",
   "seryoga": "Серёга",
   "naiv": "Наив",
+  "alians": "Альянс",
+  "alyans": "Альянс",
   "dolphin": "Дельфин",
   "kino": "Кино",
   "viktor tsoi": "Виктор Цой",
@@ -551,14 +570,15 @@ var MODIFIERS = {
   mono:1, stereo:1, deluxe:1, edition:1, bonus:1, track:1,
   demo:1, original:1, the:1, a:1, an:1, and:1, of:1, in:1,
   to:1, on:1, for:1, by:1, with:1,
-  feat:1, ft:1, featuring:1
-};
+  feat:1, ft:1, featuring:1};
 var SUSPICIOUS = { mashup:1, bootleg:1, remix:1, cover:1, parody:1, karaoke:1 };
 
 function tokens(s){
   var t = String(s || "");
   /* «mêmes» → «memes», «ё» → «е»: сравниваем без диакритики */
   if(t.normalize) t = t.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  /* Апостроф не разделяет слово: Don't = Dont = «dont» */
+  t = t.replace(/['’`´]/g, "");
   return t.toLowerCase()
     .replace(/[\(\)\[\]\{\},]/g, " ")
     .replace(/[^\wа-яё\s]/gi, " ")
@@ -634,8 +654,16 @@ function tokenNear(a, b){
   if(a === b) return true;
   var la=a.length, lb=b.length, min=Math.min(la,lb);
   if(min < 4) return false;
-  /* обрезанное имя файла: «направл» ↔ «направление» */
-  if(a.indexOf(b) === 0 || b.indexOf(a) === 0) return true;
+  /* обрезанное имя файла: «направл» ↔ «направление».
+     Но «star» и «star1» — разные слова: цифровой хвост и слишком
+     короткие основы за обрезку не считаем */
+  if(a.indexOf(b) === 0 || b.indexOf(a) === 0){
+    var longer = la > lb ? a : b, shorter = la > lb ? b : a;
+    var rest = longer.slice(shorter.length);
+    if(/^\d+$/.test(rest)) return false;
+    if(min < 5) return false;
+    return true;
+  }
   if(Math.abs(la-lb) > 4) return false;
   return lev(a,b) <= (min >= 6 ? 2 : 1);
 }
@@ -1613,7 +1641,9 @@ function statusBadge(info){
   var pct = (typeof info.score === "number" && info.score > 0) ? " · " + Math.round(info.score * 100) + "%" : "";
   if(info.status==="ok")     return '<span class="bd ok" title="Подтверждено: '+esc(info.source||"интернет")+'">✓ подтверждено'+pct+'</span>';
   if(info.status==="fixed")  return '<span class="bd fx" title="Исправлено по данным '+esc(info.source||"интернета")+'">✎ '+esc(info.source||"исправлено")+pct+'</span>';
-  if(info.status==="manual") return '<span class="bd mn" title="Введено вручную">✎ вручную</span>';
+  if(info.status==="manual") return info.source === "память"
+    ? '<span class="bd mn" title="Взято из ваших прошлых правок — интернет не нужен">✎ память</span>'
+    : '<span class="bd mn" title="Введено вручную">✎ вручную</span>';
   return "";
 }
 function folderOf(p){
@@ -1669,13 +1699,37 @@ function rowHtml(f,i){
     '</div></div>';
 }
 
-/* Прослушивание прямо в списке */
+/* Строка проигрывания с ползунком */
 var playingRes = -1;
+function pbarUpdate(){
+  var a=$("player"), s=$("pbs"), t=$("pbt");
+  if(!a || !s) return;
+  var dur = a.duration || 0;
+  if(dur > 0 && !s.dataset.seek){
+    s.value = Math.round((a.currentTime / dur) * 1000);
+  }
+  if(t) t.textContent = fmtDur(a.currentTime||0) + (dur ? " / " + fmtDur(dur) : "");
+}
+function pbarShow(name){
+  var b=$("pbar"); if(!b) return;
+  $("pbn").textContent = name || "—";
+  b.classList.add("show");
+  document.body.classList.add("has-pbar");
+  var a=$("player");
+  if($("pbp")) $("pbp").textContent = (a && !a.paused) ? "⏸" : "▶";
+  pbarUpdate();
+}
+function pbarHide(){
+  var b=$("pbar"); if(!b) return;
+  b.classList.remove("show");
+  document.body.classList.remove("has-pbar");
+}
 function stopPlayback(){
   var a=$("player");
   if(a){ try{ a.pause(); a.removeAttribute("src"); a.load(); }catch(e){} }
   if(playingUrl){ try{ URL.revokeObjectURL(playingUrl); }catch(e){} }
   playingUrl=""; playingId=0; playingRes=-1;
+  pbarHide();
 }
 /* Прослушивание в списке готовых файлов */
 function togglePlayRes(i){
@@ -1691,6 +1745,7 @@ function togglePlayRes(i){
   a.onended=function(){ stopPlayback(); drawResults(); };
   var p=a.play();
   if(p && p.catch) p.catch(function(){ stopPlayback(); drawResults(); });
+  pbarShow(r.name);
   drawResults();
 }
 function togglePlay(id){
@@ -1707,6 +1762,7 @@ function togglePlay(id){
   a.onended=function(){ stopPlayback(); draw(); };
   var p=a.play();
   if(p && p.catch) p.catch(function(){ stt("Не удалось воспроизвести этот файл."); stopPlayback(); draw(); });
+  pbarShow(f.info && (f.info.artist || f.info.title) ? ((f.info.artist ? f.info.artist + " — " : "") + (f.info.title || "")) : f.name);
   draw();
 }
 
@@ -1829,6 +1885,37 @@ function dropJunkPrefix(artist){
 function stripFeatCredit(s){
   return String(s||"").replace(/\s+(feat\.?|ft\.?|featuring|при\s+уч\.?)\s+\S+/gi, " ").replace(/\s+/g, " ").trim();
 }
+/* ============================================================
+   ПАМЯТЬ ПРАВОК
+   Пользователь поправил трек вручную или выбрал вариант ⇄ —
+   это запоминается по имени файла и применяется само.
+   ============================================================ */
+var _MEM_KEY = "ashuffle.mem.v1";
+function memAll(){
+  try{ return JSON.parse(localStorage.getItem(_MEM_KEY) || "{}") || {}; }catch(e){ return {}; }
+}
+function memSave(){
+  try{ localStorage.setItem(_MEM_KEY, JSON.stringify(_MEM)); }catch(e){}
+}
+var _MEM = memAll();
+function memKeyOf(name){ return norm(name); }
+function memGet(name){
+  var k = memKeyOf(name);
+  return Object.prototype.hasOwnProperty.call(_MEM, k) ? _MEM[k] : null;
+}
+function memSet(name, artist, title){
+  if(!name) return;
+  var a = String(artist||"").trim(), t = String(title||"").trim();
+  if(!a && !t) return;
+  _MEM[memKeyOf(name)] = { artist:a, title:t, name:String(name), at:Date.now() };
+  memSave();
+}
+function memDel(name){
+  var k = memKeyOf(name);
+  if(Object.prototype.hasOwnProperty.call(_MEM, k)){ delete _MEM[k]; memSave(); }
+}
+if(typeof window !== "undefined") window.__ashuffleMemory = function(){ return _MEM; };
+
 function lookupTrack(info, dur){
   /* Латинские двойники вычищаем у любых входных данных, не только из имени файла */
   var a=foldMixed(info.artist||""), t=foldMixed(info.title||""), raw=foldMixed(info._raw||"");
@@ -2101,6 +2188,19 @@ function verifyQueue(todo){
     var f=todo[i], netAt=_netErrors;
     markProcessing(f);
     pup(i, todo.length, "Проверяю "+(i+1)+" из "+todo.length+": "+f.name);
+    /* Правка пользователя запомнена — в интернет не идём */
+    var mem = memGet(f.name);
+    if(mem && (mem.artist || mem.title)){
+      f.info.artist = mem.artist || f.info.artist;
+      f.info.title  = mem.title  || f.info.title;
+      f.info.source = "память";
+      f.info.score  = 1;
+      f.info.status = "manual";
+      f.info.alts = null; f.info.altIdx = 0;
+      i++;
+      refreshRow(f);
+      return step();
+    }
     return lookupTrack(f.info, f.duration).then(function(found){
       if(found) return found;
       /* Если в имени три и более части, пробуем прочитать его с конца */
@@ -2152,7 +2252,10 @@ function verifyQueue(todo){
           return !fndTok.some(function(x){ return x === w || tokenNear(w, x); });
         });
         var extraMeaningful = extraTok.some(function(w){ return w.length > 2 && !MODIFIERS[w]; });
-        if(subset && fndTok.length < srcTok.length && extraMeaningful) keepFeat = true;
+        /* Сохраняем кредит файла только если это явный совместный кредит
+           («feat», «&», «and»), а не искажённая граница слов */
+        var creditMark = /(?:^|\s)(feat\.?|ft\.?|&|and|with|vs\.?|и|с)(?:\s|$)/i.test(srcArtist);
+        if(subset && fndTok.length < srcTok.length && extraMeaningful && creditMark) keepFeat = true;
         /* Строчное имя в файле — мусорная запись, а не кредит: берём написание каталога */
         var srcAllLower = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();
         if(srcAllLower) keepFeat = false;
@@ -2169,6 +2272,9 @@ function verifyQueue(todo){
         f.info.artist = keepArticle(f.info.artist, srcArtist);
         /* На выходе латинских двойников быть не должно */
         f.info.artist = foldMixed(f.info.artist);
+        /* Словарь важнее каталога: Alyans -> Альянс */
+        var dictArtist = aliasFor(f.info.artist);
+        if(dictArtist && /[а-яё]/i.test(dictArtist)) f.info.artist = dictArtist;
         var finalTitle = (sameTitle && srcTitle && !lowerTitle) ? srcTitle : (foundTitle || srcTitle);
         /* Версия записи из исходной фразы не теряется: «(Get Better Radio Remix)» */
         var vtail = versionTail(found, { artist: srcArtist, title: srcTitle });
@@ -2258,6 +2364,13 @@ function preferCyrillic(found, dur, sourceArtist){
   if(!/[A-Za-z]/.test(artist) || /[А-Яа-яЁё]/.test(artist)) return Promise.resolve(found);
   /* Только для русских треков: иначе гоняли бы лишние запросы по английским */
   if(!/[А-Яа-яЁё]/.test((found.title || "") + " " + (sourceArtist || ""))) return Promise.resolve(found);
+  /* Словарь знает написание лучше транслита: Alyans → Альянс */
+  var dictName = aliasFor(artist);
+  if(dictName && /[а-яё]/i.test(dictName)){
+    var swapped = { artist: dictName, title: found.title, source: found.source, score: found.score };
+    if(found.alts) swapped.alts = found.alts;
+    return Promise.resolve(swapped);
+  }
   var guess = untranslit(artist);
   if(!/[а-яё]/.test(guess)) return Promise.resolve(found);
   var term = (guess + " " + (found.title || "")).trim();
@@ -2820,6 +2933,8 @@ $("list").addEventListener("click", function(e){
     inf.artist=c.artist; inf.title=c.title;
     inf.source=c.source||""; inf.score=c.score||0;
     if(inf.status==="none") inf.status="fixed";
+    /* Выбор пользователя запоминаем навсегда */
+    memSet(files[idx].name, inf.artist, inf.title);
     confirmed=false; resetResults();
     refreshRow(files[idx]); updateGoBtn();
     /* Подсветка — чтобы смена варианта была заметна */
@@ -2828,16 +2943,21 @@ $("list").addEventListener("click", function(e){
       rowEl.classList.add("flash");
       setTimeout(function(){ try{ rowEl.classList.remove("flash"); }catch(e2){} }, 700);
     }
-    stt("Вариант "+(k+1)+" из "+al.length+": "+c.artist+" — "+c.title+(c.source?" ("+c.source+")":""));
-    /* Имена пересобираем только когда ничего не идёт; сообщение — после */
-    var msgAlt="Вариант "+(k+1)+" из "+al.length+": "+c.artist+" — "+c.title;
-    if(madeTrue && !busy && !verifying) startRename({ quiet:true, done:function(){ stt(msgAlt); } });
-    else stt(msgAlt);
+    var msgAlt="Вариант "+(k+1)+" из "+al.length+": "+c.artist+" — "+c.title+(c.source?" ("+c.source+")":"");
+    /* Имена пересобираем только по команде пользователя */
+    if(madeTrue && !busy && !verifying){
+      madeTrue=false; results=[]; resetResults(); updateGoBtn();
+      stt(msgAlt+". Нажмите 🪄, чтобы пересобрать имена.");
+    } else {
+      stt(msgAlt);
+    }
     return;
   }
   if(act==="cancel"){ editingId=0; draw(); return; }
   if(act==="reset"){
     var p0=files[idx].parsed;
+    /* Возврат к исходному имени отменяет и запомненную правку */
+    memDel(files[idx].name);
     files[idx].info={ artist:p0.artist, title:p0.title, _raw:p0._raw, status:"raw", source:"" };
     madeTrue=false; confirmed=false;
     editingId=0; dirty=true; resetResults(); draw();
@@ -2853,6 +2973,8 @@ $("list").addEventListener("click", function(e){
     files[idx].info.status="manual";
     files[idx].info.alts=null; files[idx].info.altIdx=0;
     files[idx].info.source="";
+    /* Ручная правка запоминается навсегда */
+    memSet(files[idx].name, files[idx].info.artist, files[idx].info.title);
     madeTrue=false; confirmed=false;
     editingId=0; dirty=true; resetResults(); draw();
     stt("Название исправлено вручную.");
@@ -2888,6 +3010,35 @@ $("clr").addEventListener("click",function(){
   stt("Очищено"); updateGoBtn();
 });
 $("tt").addEventListener("click",function(){var d=document.documentElement.getAttribute("data-theme")==="dark";theme(d?"light":"dark")});
+
+/* Строка проигрывания: ползунок, пауза, стоп */
+(function(){
+  var a=$("player"), s=$("pbs"), b=$("pbp"), x=$("pbx");
+  if(!a) return;
+  a.addEventListener("timeupdate", pbarUpdate);
+  a.addEventListener("loadedmetadata", pbarUpdate);
+  a.addEventListener("play", function(){ if(b) b.textContent="⏸"; });
+  a.addEventListener("pause", function(){ if(b) b.textContent="▶"; });
+  if(s){
+    s.addEventListener("input", function(){
+      s.dataset.seek = "1";
+      var dur = a.duration || 0;
+      if(dur) a.currentTime = (s.value / 1000) * dur;
+      pbarUpdate();
+    });
+    s.addEventListener("change", function(){ delete s.dataset.seek; });
+    s.addEventListener("pointerup", function(){ delete s.dataset.seek; });
+  }
+  if(b) b.addEventListener("click", function(){
+    if(a.paused){ var p=a.play(); if(p && p.catch) p.catch(function(){}); }
+    else a.pause();
+  });
+  if(x) x.addEventListener("click", function(){
+    var wasRes = playingRes;
+    stopPlayback();
+    if(wasRes >= 0) drawResults(); else draw();
+  });
+})();
 
 function readDirRecursive(entry, path, out){
   return new Promise(function(resolve){

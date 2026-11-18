@@ -111,8 +111,15 @@ module.exports = [
   { id: 39, name: "пометка версии расширяет допуск по длительности", run: a =>
       a.durOkExact(186, 220000) === true && a.durOk(186, 220000) === false },
 
-  { id: 40, name: "хвост версии сохраняется в названии", run: a =>
-      a.versionTail({ artist: "Monoir", title: "3 to 1" },
+  { id: 40, name: "хвост версии сохраняется в названии", run: a =>      a.versionTail({ artist: "Monoir", title: "3 to 1" },
                     { artist: "monoir feat eneli 3 to 1 get better radio", title: "remix" }) === "eneli get better radio remix" &&
       a.versionTail({ artist: "Исполнитель", title: "Песня" }, { artist: "Исполнитель", title: "Песня" }) === "" },
+
+  { id: 42, name: "правка запоминается и примется без интернета", run: a => {
+      a.memSet("039 - unknown_artist - Tyani.mp3", "Король и Шут", "Тяни");
+      const m = a.memGet("039 - unknown_artist - Tyani.mp3");
+      const ok = !!m && m.artist === "Король и Шут" && m.title === "Тяни";
+      a.memDel("039 - unknown_artist - Tyani.mp3");
+      return ok && a.memGet("039 - unknown_artist - Tyani.mp3") === null;
+    } },
 ];
