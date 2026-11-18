@@ -125,7 +125,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.56</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.64</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -368,8 +368,12 @@ function durOkExact(fileDur, candMs){
   return Math.abs(candMs / 1000 - fileDur) <= DUR_TOL_EXACT;
 }
 function nameExact(query, artist, title){
-  var q = tokens(query).join(" "), r = tokens((artist||"") + " " + (title||"")).join(" ");
-  return !!q && q === r;
+  var q = tokens(query), r = tokens((artist||"") + " " + (title||""));
+  if(!q.length || q.join(" ") !== r.join(" ")) return false;
+  /* Односложное короткое название совпадает случайно: «seorita» → любая Señorita */
+  var sig = unique(q).filter(function(w){ return w.length >= 3 && !MODIFIERS[w]; });
+  if(sig.length < 2) return sig.length === 1 && String(sig[0]).length >= 8;
+  return true;
 }
 /** «(Bonus)», «(Remastered)» — не часть названия */
 function stripNoiseBrackets(s){
@@ -774,6 +778,8 @@ function untranslit(s){
 function isGoodMatchFlex(query, artist, title){
   query = foldMixed(query);
   if(isGoodMatch(query, artist, title)) return true;
+  /* Мягкий проход: «seorita» ≈ «señorita» */
+  if(isGoodMatch(query, artist, title, true)) return true;
   var a=foldMixed(artist||""), t=foldMixed(title||"");
   /* Приводим обе стороны к латинице: «Dabro» ↔ «Дабро» */
   var ql=translit(query), al=translit(a), tl=translit(t);
@@ -927,23 +933,29 @@ var _itCache = {}, _lastITRequest = 0;
 /* Deezer: ключ не нужен, но CORS нет — берём через JSONP. Название оставляем как есть. */
 var _dzCache = {}, _jsonpSeq = 0;
 function _jsonp(url, cbParam, timeoutMs){
-  return new Promise(function(resolve){
-    var name = "__asj" + (++_jsonpSeq) + "_" + Date.now();
-    var script = document.createElement("script");
-    var done = false;
-    function finish(data){
-      if(done) return;
-      done = true;
-      try{ delete window[name]; }catch(e){ window[name] = undefined; }
-      if(script.parentNode) script.parentNode.removeChild(script);
-      resolve(data || null);
-    }
-    window[name] = function(data){ finish(data); };
-    script.onerror = function(){ finish(null); };
-    script.src = url + "&" + cbParam + "=" + encodeURIComponent(name);
-    setTimeout(function(){ finish(null); }, timeoutMs || 10000);
-    document.body.appendChild(script);
-  });
+  function attempt(n){
+    return new Promise(function(resolve){
+      var name = "__asj" + (++_jsonpSeq) + "_" + Date.now();
+      var script = document.createElement("script");
+      var done = false;
+      function finish(data){
+        if(done) return;
+        done = true;
+        try{ delete window[name]; }catch(e){ window[name] = undefined; }
+        if(script.parentNode) script.parentNode.removeChild(script);
+        if(data) return resolve(data);
+        /* Сбой сети или лимит Deezer: одна повторная попытка */
+        if(n < 1) return setTimeout(function(){ attempt(n+1).then(resolve); }, 500);
+        resolve(null);
+      }
+      window[name] = function(data){ finish(data); };
+      script.onerror = function(){ finish(null); };
+      script.src = url + "&" + cbParam + "=" + encodeURIComponent(name);
+      setTimeout(function(){ finish(null); }, timeoutMs || 10000);
+      document.body.appendChild(script);
+    });
+  }
+  return attempt(0);
 }
 function lookupDeezer(term, dur, loose){
   if(!term) return Promise.resolve(null);
@@ -1542,9 +1554,39 @@ function usefulTag(v){
   return true;
 }
 /* Тег важнее имени файла; длительность нужна для отсева чужих совпадений. */
+/* Длительность mp3 по первому кадру (CBR) — запасной путь,
+   когда <audio> не смог прочитать метаданные */
+var _BR = [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0];
+var _SR = [44100,48000,32000,0];
+function mp3DurationEstimate(file){
+  return file.slice(0, 8192).arrayBuffer().then(function(buf){
+    var u8 = new Uint8Array(buf);
+    var start = 0;
+    if(u8.length > 10 && u8[0] === 0x49 && u8[1] === 0x44 && u8[2] === 0x33){
+      start = 10 + (((u8[6]&0x7f)<<21) | ((u8[7]&0x7f)<<14) | ((u8[8]&0x7f)<<7) | (u8[9]&0x7f));
+    }
+    for(var i=start; i<u8.length-4 && i<start+4096; i++){
+      if(u8[i] === 0xFF && (u8[i+1] & 0xE0) === 0xE0){
+        var br = _BR[(u8[i+2] >> 4) & 0x0F] * 1000;
+        var sr = _SR[(u8[i+2] >> 2) & 0x03];
+        if(!br || !sr) continue;
+        var audioBytes = file.size - i;
+        var dur = audioBytes * 8 / br;
+        return (dur > 5 && dur < 7200) ? Math.round(dur * 10) / 10 : 0;
+      }
+    }
+    return 0;
+  }).catch(function(){ return 0; });
+}
 function inspectEntry(e){
   return probeDuration(e.file).then(function(dur){
-    if(dur > 0) e.duration = dur;
+    if(dur > 0){ e.duration = dur; return dur; }
+    if(ext(e.name) === "mp3") return mp3DurationEstimate(e.file).then(function(d2){
+      if(d2 > 0) e.duration = d2;
+      return d2;
+    });
+    return 0;
+  }).then(function(){
     var extn = ext(e.name);
     if(extn === "mp3") return readMp3Tags(e.file);
     if(extn === "flac") return readFlacTags(e.file);
@@ -1685,7 +1727,7 @@ function rowHtml(f,i){
         '<span class="ex">'+e+'</span>'+
         '<button class="ic" data-act="edit" data-id="'+f.id+'" type="button" title="Исправить исполнителя и название">✎</button>'+
         '<button class="ic rm" data-act="rm" data-id="'+f.id+'" type="button" title="Убрать из списка">✕</button>'+
-        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать (можно просто щёлкнуть по строке)">'+(playingId===f.id?'⏸':'▶')+'</button>'+
+        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать">'+(playingId===f.id?'⏸':'▶')+'</button>'+
       '</div>'+
       '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
         (info.alts && info.alts.length > 1 ? '<button class="bd alt" data-act="alt" data-id="'+f.id+'" type="button" title="'+esc(altTip(info))+'" >⇄ '+((info.altIdx||0)+1)+'/'+info.alts.length+'</button>' : '')+
@@ -1820,9 +1862,14 @@ function tailOk(found, fileWords){
   var pool = fileWords.map(function(w){ return w.toLowerCase(); });
   var tt = tokens(found.title);
   if(!tt.length) return false;
-  return tt.every(function(w){
+  var ok = tt.every(function(w){
     return pool.some(function(x){ return x === w || tokenNear(w, x); });
   });
+  if(ok) return true;
+  /* «9PM» в каталоге против «9 pm» в файле: сравниваем и без пробелов */
+  var joinedTitle = tt.join("");
+  var joinedPool = pool.join("");
+  return joinedTitle.length > 2 && joinedPool.indexOf(joinedTitle) >= 0;
 }
 /* Имя строчными буквами: Deezer ищет «Джанго», но не «жанго» */
 function capitalizeArtist(artist){
@@ -1925,7 +1972,8 @@ function lookupTrack(info, dur){
   if(isPlaceholder(a) || !tokens(a).length) a = "";
   _wideWindow = _VERSION_WORDS.test(String(info.artist||"") + " " + String(info.title||""));
   var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";
-  var term=(primary || raw || (a ? "" : t)).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
+  /* Без исполнителя запрос строится по названию, а не по сырому имени файла */
+  var term=(primary || (a ? raw : t) || raw).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
   if(!term) return Promise.resolve(null);
   if(!primary && (!t || t === "unknown_track")) return Promise.resolve(null);
 
@@ -1957,10 +2005,13 @@ function lookupTrack(info, dur){
     }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   function pushDeezer(term){
-    steps.push(guardArtist(function(){ return lookupDeezer(term, dur); }, a && term.indexOf(a) === 0 ? a : "", t));
+    /* Без исполнителя правило «лишних слов» не работает: в кандидате всегда есть имя артиста */
+    var l = !a;
+    steps.push(guardArtist(function(){ return lookupDeezer(term, dur, l); }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   function pushITunes(term){
-    steps.push(guardArtist(function(){ return lookupITunes(term, dur); }, a && term.indexOf(a) === 0 ? a : "", t));
+    var l = !a;
+    steps.push(guardArtist(function(){ return lookupITunes(term, dur, l); }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   /* Запрос без исполнителя не должен подменять исполнителя: сверяем с тем, что в файле */
   function guardTitle(expectedTitle, fn){
@@ -2104,8 +2155,8 @@ function lookupTrack(info, dur){
   }
   /* Совсем без исполнителя — по одному названию; название кандидата тоже проверяем */
   if(titleOnly){
-    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupDeezer(titleOnly, dur); }, a)));
-    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupITunes(titleOnly, dur); }, a)));
+    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupDeezer(titleOnly, dur, true); }, a)));
+    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupITunes(titleOnly, dur, true); }, a)));
     steps.push(guardTitle(titleOnly, guardArtist(function(){
       return lookupMusicBrainzByRecording(titleOnly).then(function(r){ return pickMusicBrainzResult(r, titleOnly, dur); });
     }, a)));
@@ -2905,14 +2956,7 @@ $("dlAll").addEventListener("click", function(){
 /* Кнопки в списке файлов: править, сохранить, сбросить, убрать */
 $("list").addEventListener("click", function(e){
   var b = e.target.closest ? e.target.closest("[data-act]") : null;
-  /* Клик по самой строке (не по кнопке) — слушать трек */
-  if(!b){
-    var tag = (e.target.tagName || "").toLowerCase();
-    if(tag === "input" || tag === "button") return;
-    var row = e.target.closest ? e.target.closest(".fi") : null;
-    if(row && row.dataset.id && !row.querySelector("input")) togglePlay(+row.dataset.id);
-    return;
-  }
+  if(!b) return;
   var id0=+b.dataset.id, act0=b.dataset.act;
   /* Слушать и менять вариант можно и во время проверки: это не меняет очередь */
   if((busy || verifying) && act0 !== "alt" && act0 !== "play"){
