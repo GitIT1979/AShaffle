@@ -125,7 +125,7 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.64</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.65</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
@@ -700,6 +700,8 @@ function versionTail(found, info){
 var DUR_TOL = 10;
 /* Ниже этого балла совпадение считается случайным: «Tyani» ≠ «Teni — HUSTLE» */
 var MIN_SCORE = 0.5;
+/* Бюджет шагов поиска: цепочка запросов не тянется бесконечно */
+var _MAX_STEPS = 30;
 /* Пометка версии в самом файле расширяет допуск по длительности */
 var _wideWindow = false;
 function durOk(fileDur, candMs){
@@ -808,7 +810,7 @@ function _fetchT(url, opts, ms){
 }
 function _mbFetch(url, attempt){
   attempt = attempt || 0;
-  return _fetchT(url, { headers: { "User-Agent": "Ashuffle/11.16 ( https://github.com/GitIT1979/AShaffle )" } }, 15000)
+  return _fetchT(url, null, 15000)
     .then(function(r){
       if((r.status === 503 || r.status === 429) && attempt < 2){
         console.warn("MB " + r.status + ", retry in 2s (attempt " + (attempt+1) + ")");
@@ -835,7 +837,7 @@ function _mbRequest(query, limit){
           _mbCache[key] = data.recordings || [];
           resolve(_mbCache[key]);
         })
-        .catch(function(){ _mbCache[key] = []; _netErrors++; resolve([]); });
+        .catch(function(){ _netErrors++; resolve([]); });
     }, wait);
   });
 }
@@ -983,24 +985,7 @@ function lookupDeezer(term, dur, loose){
     if(out) out.alts = sortAlts(picked);
     _dzCache[key] = out;
     return out;
-  }).catch(function(){ _dzCache[key] = null; _netErrors++; return null; });
-}
-/* Discogs — только для перекрёстной проверки сомнительных совпадений */
-var _dcCache = {};
-function discogsConfirm(artist, title){
-  var q = ((artist ? artist + " " : "") + title).trim();
-  if(!q) return Promise.resolve(false);
-  var key = "dc|" + q.toLowerCase();
-  if(Object.prototype.hasOwnProperty.call(_dcCache, key)) return Promise.resolve(_dcCache[key]);
-  return _fetchT("https://api.discogs.com/database/search?type=release&per_page=5&q=" + encodeURIComponent(q),
-                 { headers: { "User-Agent": "Ashuffle/11.16 ( https://github.com/GitIT1979/AShaffle )" } }, 10000)
-    .then(function(r){ if(!r.ok) throw new Error("Discogs " + r.status); return r.json(); })
-    .then(function(j){
-      var ok = ((j && j.results) || []).some(function(x){ return isGoodMatchFlex(q, x.title || "", ""); });
-      _dcCache[key] = ok;
-      return ok;
-    })
-    .catch(function(){ _dcCache[key] = false; return false; });
+  }).catch(function(){ _netErrors++; return null; });
 }
 function lookupITunes(term, dur, loose){
   if(!CAN_ITUNES) return Promise.resolve(null);
@@ -1040,7 +1025,7 @@ function lookupITunes(term, dur, loose){
           if(out) out.alts = sortAlts(picked);
           _itCache[key] = out; resolve(out);
         })
-        .catch(function(){ _itCache[key] = null; _netErrors++; resolve(null); });
+        .catch(function(){ _netErrors++; resolve(null); });
     }, wait);
   });
 }
@@ -1113,24 +1098,94 @@ var _REPLACED_FRAMES = { TIT2: 1, TPE1: 1, TRCK: 1 };
 function _syncsafe(u8, off){
   return ((u8[off]&0x7f)<<21)|((u8[off+1]&0x7f)<<14)|((u8[off+2]&0x7f)<<7)|(u8[off+3]&0x7f);
 }
-/* Читает существующий ID3v2-тег. frames заполняется только для 2.3/2.4 без
-   unsynchronisation; для остальных версий тег всё равно нужно пропустить целиком. */
+/* Читает существующий ID3v2-тег (v2.2/2.3/2.4): de-unsynchronisation, расширенный
+   заголовок, кадры PIC (v2.2) → APIC, индикаторы длины, пропуск сжатых/зашифрованных. */
+function _deunsync(u8){
+  var out = [], i = 0, n = u8.length;
+  while(i < n){
+    out.push(u8[i]);
+    if(u8[i] === 0xFF && i + 1 < n && u8[i+1] === 0x00) i++;
+    i++;
+  }
+  return new Uint8Array(out);
+}
+/* Имена кадров ID3v2.2 → ID3v2.4. */
+var _V22_MAP = { TT1:"TIT1", TT2:"TIT2", TT3:"TIT3", TP1:"TPE1", TP2:"TPE2", TP3:"TPE3",
+  TP4:"TPE4", TAL:"TALB", TRK:"TRCK", TPA:"TPOS", TCO:"TCON", TCM:"TCOM", TYE:"TDRC",
+  COM:"COMM", TXX:"TXXX" };
+/* Кадр PIC (v2.2) переписываем в APIC (v2.4): трёхбуквенный код формата → mime-строка. */
+function _picToApic(body){
+  if(body.length < 6) return null;
+  var fmt = String.fromCharCode(body[1], body[2], body[3]).toUpperCase();
+  var mime = fmt === "PNG" ? "image/png" : "image/jpeg";
+  var pos = 4;
+  while(pos < body.length && body[pos] !== 0) pos++;
+  if(pos + 1 >= body.length) return null;
+  /* utf16-описание закрывается двумя нулями — второй пропускаем */
+  if((body[0] === 1 || body[0] === 2) && body[pos + 1] === 0) pos++;
+  var data = body.subarray(pos + 1);
+  var out = new Uint8Array(1 + mime.length + 1 + data.length);
+  var i, j = 0;
+  out[j++] = body[0];
+  for(i = 0; i < mime.length; i++) out[j++] = mime.charCodeAt(i);
+  out[j++] = 0;
+  out.set(data, j);
+  return { id: "APIC", body: out };
+}
 function readId3Tag(u8){
   if(u8.length < 10 || u8[0] !== 0x49 || u8[1] !== 0x44 || u8[2] !== 0x33) return null;
   var ver = u8[3], flags = u8[5], size = _syncsafe(u8, 6);
   var tag = { size: size, footer: (flags & 0x10) ? 10 : 0, frames: [] };
-  if(ver !== 3 && ver !== 4) return tag;
-  if(flags & 0x80) return tag;
-  var end = Math.min(10 + size, u8.length), pos = 10;
-  while(pos + 10 <= end){
-    var id = String.fromCharCode(u8[pos], u8[pos+1], u8[pos+2], u8[pos+3]);
+  if(ver < 2 || ver > 4) return tag;
+  var body = u8.subarray(10, Math.min(10 + size, u8.length));
+  /* Unsynchronisation: FF 00 → FF. В v2.4 размеры syncsafe — можно развернуть
+     весь тег сразу; в v2.2/2.3 размеры хранят вставленные 00 — разворачиваем сам кадр */
+  if(ver === 4 && (flags & 0x80)) body = _deunsync(body);
+  var tagUns = ver < 4 && (flags & 0x80) !== 0;
+  var pos = 0;
+  if(ver === 2){
+    var p2 = 0;
+    while(p2 + 6 <= body.length){
+      var id2 = String.fromCharCode(body[p2], body[p2+1], body[p2+2]);
+      if(!/^[A-Z0-9]{3}$/.test(id2)) break;
+      var len2 = (body[p2+3] << 16) | (body[p2+4] << 8) | body[p2+5];
+      if(!len2 || p2 + 6 + len2 > body.length) break;
+      var fb2 = body.subarray(p2 + 6, p2 + 6 + len2);
+      p2 += 6 + len2;
+      if(tagUns) fb2 = _deunsync(fb2);
+      if(id2 === "PIC"){
+        var pic = _picToApic(fb2);
+        if(pic) tag.frames.push(pic);
+      } else {
+        tag.frames.push({ id: _V22_MAP[id2] || id2, body: fb2 });
+      }
+    }
+    return tag;
+  }
+  /* Расширенный заголовок: v2.3 хранит размер без себя самого и не syncsafe */
+  if((flags & 0x40) && body.length >= 8){
+    var es = ver === 3
+      ? 4 + (((body[0] << 24) | (body[1] << 16) | (body[2] << 8) | body[3]) >>> 0)
+      : _syncsafe(body, 0);
+    if(es < 0 || es > body.length) return tag;
+    pos = es;
+  }
+  while(pos + 10 <= body.length){
+    var id = String.fromCharCode(body[pos], body[pos+1], body[pos+2], body[pos+3]);
     if(!/^[A-Z0-9]{4}$/.test(id)) break;
+    var fflags = (body[pos+8] << 8) | body[pos+9];
     var len = ver === 4
-      ? _syncsafe(u8, pos + 4)
-      : (((u8[pos+4]<<24)|(u8[pos+5]<<16)|(u8[pos+6]<<8)|u8[pos+7]) >>> 0);
-    if(!len || pos + 10 + len > end) break;
-    tag.frames.push({ id: id, body: u8.subarray(pos + 10, pos + 10 + len) });
+      ? _syncsafe(body, pos + 4)
+      : (((body[pos+4] << 24) | (body[pos+5] << 16) | (body[pos+6] << 8) | body[pos+7]) >>> 0);
+    if(!len || pos + 10 + len > body.length) break;
+    var fb = body.subarray(pos + 10, pos + 10 + len);
     pos += 10 + len;
+    /* Сжатые, зашифрованные и группированные кадры без их декодирования не читаем */
+    if(ver === 3 ? (fflags & 0xE0) : (fflags & 0x4C)) continue;
+    if(ver === 4 ? (fflags & 0x02) : tagUns) fb = _deunsync(fb);
+    /* Индикатор длины данных: первые 4 байта кадра — не содержимое */
+    if(ver === 4 && (fflags & 0x01) && fb.length >= 4) fb = fb.subarray(4);
+    tag.frames.push({ id: id, body: fb });
   }
   return tag;
 }
@@ -1187,7 +1242,8 @@ function makeRenamedFile(originalFile, finalName, num, artist, title){
         var old = readId3Tag(u8);
         var offset = old ? 10 + old.size + old.footer : 0;
         if(offset > u8.length) offset = u8.length;
-        var frames = [{ id: "TRCK", value: String(num) }];
+        var frames = [];
+        if(num) frames.push({ id: "TRCK", value: String(num) });
         if(title && title !== "unknown_track")  frames.push({ id: "TIT2", value: title });
         if(artist && artist !== "unknown_artist") frames.push({ id: "TPE1", value: artist });
         /* Обложка, альбом, год и прочее раньше терялись — переносим их в новый тег. */
@@ -1250,25 +1306,37 @@ function readId3v1(file){
   }).catch(function(){ return null; });
 }
 function readMp3Tags(file){
-  return file.slice(0, 768*1024).arrayBuffer().then(function(buf){
-    var tag = readId3Tag(new Uint8Array(buf));
-    var out = {};
-    if(tag && tag.frames && tag.frames.length){
-      tag.frames.forEach(function(f){
-        var v;
-        if(f.id === "TIT2" && !out.title){ v = decodeTextFrame(f.body); if(v) out.title = v; }
-        else if(f.id === "TPE1" && !out.artist){ v = decodeTextFrame(f.body); if(v) out.artist = v; }
-        else if(f.id === "TALB" && !out.album){ v = decodeTextFrame(f.body); if(v) out.album = v; }
-        else if(f.id === "TLEN" && !out.length){ v = parseInt(decodeTextFrame(f.body), 10); if(v > 0) out.length = v; }
-      });
-    }
-    if(out.title && out.artist) return out;
-    return readId3v1(file).then(function(v1){
-      if(v1){
-        if(!out.title && v1.title) out.title = v1.title;
-        if(!out.artist && v1.artist) out.artist = v1.artist;
-        if(!out.album && v1.album) out.album = v1.album;
+  var cap = 32 * 1024 * 1024;
+  return file.slice(0, 10).arrayBuffer().then(function(headBuf){
+    var head = new Uint8Array(headBuf);
+    var hasTag = head.length === 10 && head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33;
+    var want = hasTag ? 10 + _syncsafe(head, 6) + ((head[5] & 0x10) ? 10 : 0) : 0;
+    /* Гигантский (или повреждённый) тег целиком в память не берём */
+    if(want > cap) want = 0;
+    if(!want) return null;
+    return file.slice(0, want).arrayBuffer().then(function(buf){
+      var tag = readId3Tag(new Uint8Array(buf));
+      var out = {};
+      if(tag && tag.frames && tag.frames.length){
+        tag.frames.forEach(function(f){
+          var v;
+          if(f.id === "TIT2" && !out.title){ v = decodeTextFrame(f.body); if(v) out.title = v; }
+          else if(f.id === "TPE1" && !out.artist){ v = decodeTextFrame(f.body); if(v) out.artist = v; }
+          else if(f.id === "TALB" && !out.album){ v = decodeTextFrame(f.body); if(v) out.album = v; }
+          else if(f.id === "TLEN" && !out.length){ v = parseInt(decodeTextFrame(f.body), 10); if(v > 0) out.length = v; }
+        });
       }
+      return (out.title || out.artist) ? out : null;
+    });
+  }).then(function(out){
+    if(out && out.title && out.artist) return out;
+    /* Тегов нет или не хватает полей — добираем из ID3v1 в хвосте файла */
+    return readId3v1(file).then(function(v1){
+      if(!v1) return (out && (out.title || out.artist)) ? out : null;
+      out = out || {};
+      if(!out.title && v1.title) out.title = v1.title;
+      if(!out.artist && v1.artist) out.artist = v1.artist;
+      if(!out.album && v1.album) out.album = v1.album;
       return (out.title || out.artist) ? out : null;
     });
   }).catch(function(){ return null; });
@@ -1311,7 +1379,7 @@ function readFlacTags(file){
       else if(type === 0 && len >= 18){
         var b = u8.subarray(start, start + len);
         var sr = (b[10] << 12) | (b[11] << 4) | (b[12] >> 4);
-        var total = (b[13] & 0x0f) * 4294967296 + ((b[14] << 24) | (b[15] << 16) | (b[16] << 8) | b[17]);
+        var total = (b[13] & 0x0f) * 4294967296 + (((b[14] << 24) | (b[15] << 16) | (b[16] << 8) | b[17]) >>> 0);
         if(sr > 0 && total > 0) out.length = Math.round(total / sr * 1000);
       }
       pos = start + len;
@@ -1834,7 +1902,7 @@ function resetResults(){
 function drawResults(){
   var L=$("resList");L.innerHTML="";
   results.forEach(function(r,i){
-    var tag=r.isMp3?('<span class="sz">TRCK='+r.trackNum+'</span>'):'<span class="sz">—</span>';
+    var tag=(r.isMp3 && r.trackNum)?('<span class="sz">TRCK='+r.trackNum+'</span>'):'<span class="sz">—</span>';
     var src=r.source?(' <span class="sz" style="font-size:10px;opacity:.7">'+esc(r.source)+'</span>'):'';
     var d=document.createElement("div");d.className="res-item";
     d.innerHTML='<span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span>'+src+'<span class="ar">'+esc(r.artist||"—")+'</span>'+tag+'<span class="sz">'+fmtSize(r.size)+'</span><button class="btn sm" data-i="'+i+'" type="button">💾</button><button class="ic" data-play="'+i+'" type="button" title="Прослушать">'+(playingRes===i?'⏸':'▶')+'</button>';
@@ -1982,13 +2050,14 @@ function lookupTrack(info, dur){
   var shortTerm = ((a ? a + " " : "") + (t || "").split(/\s+/).slice(0, 2).join(" ")).trim();
   if(shortTerm === qterm) shortTerm = "";
   /* Усечённое или неполное имя исполнителя — те же запасные варианты */
+  /* Название из одних служебных слов («remix») само по себе ничего не ищет:
+     запрос «исполнитель + remix» цепляет чужие ремиксы. Считаем до titleOnly:
+     иначе titleWeak в этой точке ещё undefined и «модификатор» ищется как песня */
+  var titleTok = tokens(t || "");
+  var titleWeak = titleTok.length > 0 && titleTok.every(function(w){ return MODIFIERS[w]; });
   var titleOnly = (titleWeak ? "" : (titleQ || t || "")).trim();
   if(titleOnly === qterm || titleOnly === shortTerm) titleOnly = "";
   var firstArtistWord = (a || "").split(/\s+/)[0] || "";
-  /* Название из одних служебных слов («remix») само по себе ничего не ищет:
-     запрос «исполнитель + remix» цепляет чужие ремиксы */
-  var titleTok = tokens(t || "");
-  var titleWeak = titleTok.length > 0 && titleTok.every(function(w){ return MODIFIERS[w]; });
   var shortArtistTerm = (firstArtistWord && t && firstArtistWord !== a && !titleWeak) ? (firstArtistWord + " " + (titleQ || t)).trim() : "";
   if(shortArtistTerm === qterm) shortArtistTerm = "";
   var cyr = /[а-яё]/i.test(term);
@@ -2222,7 +2291,7 @@ function lookupTrack(info, dur){
   }
   var i=0;
   function next(){
-    if(i>=steps.length) return Promise.resolve(null);
+    if(i>=steps.length || i>=_MAX_STEPS) return Promise.resolve(null);
     return Promise.resolve(steps[i++]()).then(function(found){ return found ? found : next(); });
   }
   return next().catch(function(){ return null; });
@@ -2270,16 +2339,6 @@ function verifyQueue(todo){
     }).then(function(found){
       /* Полный кредит: «G-Eazy & Halsey» вместо «G-Eazy» */
       return completeCredit(found, f.info, f.duration);
-    }).then(function(found){
-      /* Сомнительное совпадение перепроверяем в Discogs */
-      if(!found || found.score >= 0.8) return found;
-      return discogsConfirm(found.artist, found.title).then(function(ok){
-        if(ok){
-          found.score = Math.min(1, found.score + 0.1);
-          found.source = found.source + " +Discogs";
-        }
-        return found;
-      });
     }).then(function(found){
       if(found){
         /* Если имя отличается только регистром, оставляем написание из файла */
@@ -2489,22 +2548,28 @@ function makeTrue(){
   });
 }
 
+/* Единый генератор неповторяющихся имён: свой реестр на каждый вызов обработки. */
+function makeUniqueNamer(){
+  var used = {};
+  return function(name){
+    if(!Object.prototype.hasOwnProperty.call(used, name)){
+      used[name]=1; return name;
+    }
+    var m=name.match(/^(.*?)(\.[^.]+)?$/), base=m[1], ext2=m[2]||"";
+    var k=2, cand;
+    do{ cand=base+" ("+k+")"+ext2; k++; }
+    while(Object.prototype.hasOwnProperty.call(used, cand));
+    used[cand]=1;
+    return cand;
+  };
+}
+
 function startRename(opts){
   opts = opts || {};
   phide(); pshow("Возвращаю имена…");
   results=[];
-  var j=0, failed=0, usedNames={};
-  function uniqueName(name){
-    if(!Object.prototype.hasOwnProperty.call(usedNames, name)){
-      usedNames[name]=1; return name;
-    }
-    var m=name.match(/^(.*?)(\.[^.]+)?$/), base=m[1], extPart2=m[2]||"";
-    var k=2, cand;
-    do{ cand=base+" ("+k+")"+extPart2; k++; }
-    while(Object.prototype.hasOwnProperty.call(usedNames, cand));
-    usedNames[cand]=1;
-    return cand;
-  }
+  var j=0, failed=0;
+  var uniqueName = makeUniqueNamer();
   function nextFile(){
     if(j>=files.length){
       phide(); drawResults();
@@ -2522,9 +2587,7 @@ function startRename(opts){
     pup(j, files.length, "Возвращаю имя "+(j+1)+" из "+files.length+": "+f.name);
     var finalName=uniqueName(isUnknownInfo(f.info) ? f.name : makeName(f.info, extPart, null));
 
-    console.log("Rename: "+f.name+" → "+finalName);
-
-    makeRenamedFile(f.file, finalName, num, f.info.artist, f.info.title)
+    makeRenamedFile(f.file, finalName, null, f.info.artist, f.info.title)
       .catch(function(err){
         console.error("Rename failed:", f.name, err);
         failed++;
@@ -2539,7 +2602,7 @@ function startRename(opts){
           source: f.info.source || "",
           size: blob.size,
           isMp3: isMp3,
-          trackNum: num
+          trackNum: 0
         });
         pup(j+1, files.length);
         j++; setTimeout(nextFile, 0);      });
@@ -2615,18 +2678,8 @@ function startShuffle(useNumbered){
 
   phide(); pshow("Обработка файлов…");
   results=[];
-  var j=0, failed=0, usedNames={};
-  function uniqueName(name){
-    if(!Object.prototype.hasOwnProperty.call(usedNames, name)){
-      usedNames[name]=1; return name;
-    }
-    var m=name.match(/^(.*?)(\.[^.]+)?$/), base=m[1], extPart2=m[2]||"";
-    var k=2, cand;
-    do{ cand=base+" ("+k+")"+extPart2; k++; }
-    while(Object.prototype.hasOwnProperty.call(usedNames, cand));
-    usedNames[cand]=1;
-    return cand;
-  }
+  var j=0, failed=0;
+  var uniqueName = makeUniqueNamer();
   function nextFile(){
     if(j>=ordered.length){
       phide();
@@ -2648,8 +2701,6 @@ function startShuffle(useNumbered){
     /* У имени без данных свой номер уже может быть — второй не добавляем */
     if(useNumbered && isUnknownInfo(f.info)) baseName = baseName.replace(/^\d{1,3}\s*[-.]\s*/, "");
     var finalName=uniqueName(useNumbered ? (pad3(num)+" - "+baseName) : baseName);
-
-    console.log("Rename: "+f.name+" → "+finalName);
 
     makeRenamedFile(f.file, finalName, num, f.info.artist, f.info.title)
       .catch(function(err){
@@ -2746,56 +2797,61 @@ function _w16(a,o,v){a[o]=v&0xFF;a[o+1]=(v>>>8)&0xFF;}
 function _w32(a,o,v){a[o]=v&0xFF;a[o+1]=(v>>>8)&0xFF;a[o+2]=(v>>>16)&0xFF;a[o+3]=(v>>>24)&0xFF;}
 
 function buildZipBlob(entries, onProgress){
-  var done = 0, total = entries.length;
-  return Promise.all(entries.map(function(e){
-    return e.file.arrayBuffer().then(function(buf){
+  var enc = new TextEncoder();
+  var files = entries.map(function(e){
+    var nb = enc.encode(e.name);
+    return { file: e.file, nameBytes: nb, nameLen: nb.length, size: e.file.size, crc: 0, offset: 0 };
+  });
+  var localTotal = 0, cdTotal = 0;
+  files.forEach(function(f){
+    f.localSize = 30 + f.nameLen + f.size;
+    f.cdSize = 46 + f.nameLen;
+    localTotal += f.localSize;
+    cdTotal += f.cdSize;
+  });
+  if(files.length > 65535){
+    return Promise.reject(new Error("файлов больше 65535 — ZIP столько не хранит"));
+  }
+  if(localTotal + cdTotal + 22 > 0xFFFFFFFF){
+    return Promise.reject(new Error("архив больше 4 ГБ — сохраните результат в папку"));
+  }
+  var now = new Date();
+  var dosTime = ((now.getHours() & 0x1f) << 11) | ((now.getMinutes() & 0x3f) << 5) | ((now.getSeconds() / 2) & 0x1f);
+  var dosDate = (((now.getFullYear() - 1980) & 0x7f) << 9) | (((now.getMonth() + 1) & 0x0f) << 5) | (now.getDate() & 0x1f);
+  var out = new Uint8Array(localTotal + cdTotal + 22);
+  var off = 0, done = 0;
+  function readOne(i){
+    if(i >= files.length) return Promise.resolve();
+    var f = files[i];
+    return f.file.arrayBuffer().then(function(buf){
+      var data = new Uint8Array(buf);
+      var start = off;
+      f.offset = start;
+      f.crc = _crc32(data);
+      var o = start;
+      _w32(out, o, 0x04034b50); o += 4;
+      _w16(out, o, 20); o += 2;
+      _w16(out, o, 0x0800); o += 2;
+      _w16(out, o, 0); o += 2;
+      _w16(out, o, dosTime); o += 2;
+      _w16(out, o, dosDate); o += 2;
+      _w32(out, o, f.crc); o += 4;
+      _w32(out, o, f.size); o += 4;
+      _w32(out, o, f.size); o += 4;
+      _w16(out, o, f.nameLen); o += 2;
+      _w16(out, o, 0); o += 2;
+      out.set(f.nameBytes, o);
+      out.set(data, start + 30 + f.nameLen);
+      off = start + 30 + f.nameLen + data.length;
       done++;
-      if(onProgress) onProgress(done, total);
-      return { name: e.name, data: new Uint8Array(buf) };
+      if(onProgress) onProgress(done, files.length);
+      /* Читаем по одному файлу: в памяти одновременно весь архив + один файл, а не два архива */
+      return readOne(i + 1);
     });
-  })).then(function(items){
-    var enc = new TextEncoder();
-    var files = items.map(function(it){
-      var nb = enc.encode(it.name);
-      return { nameBytes: nb, nameLen: nb.length, data: it.data, size: it.data.length, crc: _crc32(it.data) };
-    });
-    var localTotal = 0, cdTotal = 0;
-    files.forEach(function(f){
-      f.localSize = 30 + f.nameLen + f.size;
-      f.cdSize = 46 + f.nameLen;
-      localTotal += f.localSize;
-      cdTotal += f.cdSize;
-    });
-    if(files.length > 65535){
-      return Promise.reject(new Error("файлов больше 65535 — ZIP столько не хранит"));
-    }
-    if(localTotal + cdTotal + 22 > 0xFFFFFFFF){
-      return Promise.reject(new Error("архив больше 4 ГБ — сохраните результат в папку"));
-    }
-    var now = new Date();
-    var dosTime = ((now.getHours() & 0x1f) << 11) | ((now.getMinutes() & 0x3f) << 5) | ((now.getSeconds() / 2) & 0x1f);
-    var dosDate = (((now.getFullYear() - 1980) & 0x7f) << 9) | (((now.getMonth() + 1) & 0x0f) << 5) | (now.getDate() & 0x1f);
-    var out = new Uint8Array(localTotal + cdTotal + 22);
-    var off = 0;
-    var localOffsets = [];
-    files.forEach(function(f){
-      localOffsets.push(off);
-      _w32(out, off, 0x04034b50); off += 4;
-      _w16(out, off, 20); off += 2;
-      _w16(out, off, 0x0800); off += 2;
-      _w16(out, off, 0); off += 2;
-      _w16(out, off, dosTime); off += 2;
-      _w16(out, off, dosDate); off += 2;
-      _w32(out, off, f.crc); off += 4;
-      _w32(out, off, f.size); off += 4;
-      _w32(out, off, f.size); off += 4;
-      _w16(out, off, f.nameLen); off += 2;
-      _w16(out, off, 0); off += 2;
-      out.set(f.nameBytes, off); off += f.nameLen;
-      out.set(f.data, off); off += f.size;
-    });
+  }
+  return readOne(0).then(function(){
     var cdOffset = off;
-    files.forEach(function(f, i){
+    files.forEach(function(f){
       _w32(out, off, 0x02014b50); off += 4;
       _w16(out, off, 20); off += 2;
       _w16(out, off, 20); off += 2;
@@ -2812,7 +2868,7 @@ function buildZipBlob(entries, onProgress){
       _w16(out, off, 0); off += 2;
       _w16(out, off, 0); off += 2;
       _w32(out, off, 0); off += 4;
-      _w32(out, off, localOffsets[i]); off += 4;
+      _w32(out, off, f.offset); off += 4;
       out.set(f.nameBytes, off); off += f.nameLen;
     });
     var cdSize = off - cdOffset;
@@ -2828,9 +2884,6 @@ function buildZipBlob(entries, onProgress){
   });
 }
 
-/* ============================================================
-   11. СКАЧИВАНИЕ
-   ============================================================ */
 function download(file,name){
   var url=URL.createObjectURL(file);
   var a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();document.body.removeChild(a);
