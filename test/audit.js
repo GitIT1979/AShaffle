@@ -11,6 +11,7 @@ const EXPORTS = [
   "stripNamePrefix", "stripNoiseBrackets", "norm", "pullCreditFromTitle",
   "lookupTrack", "altParse", "preferCyrillic", "preferCyrillicTitle",
   "completeCredit", "isUnknownInfo", "makeName", "ext", "inspectEntry",
+  "versionWide",
 ];
 
 function makeEl() {
@@ -112,14 +113,15 @@ async function resolveFile(name) {
   try { tags = ext === "mp3" ? await api.readMp3Tags(f) : null; } catch (e) {}
   const info = buildInfo(name, tags);
   if (api.isUnknownInfo(info)) return { name, parsed: info, found: null, note: "нет данных" };
+  const wide = api.versionWide(info.artist, info.title);
   let found = await api.lookupTrack(info, dur);
   if (!found) {
     const alt = api.altParse(name);
     if (alt) found = await api.lookupTrack(alt, dur);
   }
-  found = await api.preferCyrillic(found, dur, info.artist);
-  found = await api.preferCyrillicTitle(found, dur, info.artist);
-  found = await api.completeCredit(found, info, dur);
+  found = await api.preferCyrillic(found, dur, info.artist, wide);
+  found = await api.preferCyrillicTitle(found, dur, info.artist, wide);
+  found = await api.completeCredit(found, info, dur, wide);
   return { name, parsed: info, found, dur };
 }
 

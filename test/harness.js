@@ -159,6 +159,17 @@ eq(api.pickMusicBrainzResult(recs, "Dabro На часах ноль-ноль", 10
 ok(api.matchScore("Dabro На часах ноль-ноль", "Dabro", "На часах ноль-ноль", 206, 206000) > 0.95, "оценка точного совпадения");
 ok(api.matchScore("Dabro На часах ноль-ноль", "Полина Гагарина", "Один в поле воин", 206, 206000) < 0.5, "чужой кандидат оценён ниже");
 
+{
+  /* Альтернативы ⇄ не должны включать кандидата ниже порога балла (правило 22).
+     Первый кандидат покрывает 2 из 7 значимых слов запроса (0.57), второй — 1 из 7 (0.49) */
+  const lowAlts = api.pickMusicBrainzResult([
+    { "artist-credit": [{ name: "Qqqq" }], title: "wwwww", length: 206000 },
+    { "artist-credit": [{ name: "Qqqq" }], title: "the of a an", length: 206000 },
+  ], "qqqq wwwww eeeee rrrrr ttttt yyyyy uuuuu", 206);
+  ok(lowAlts && lowAlts.alts.length === 1, "альтернативы без кандидатов ниже порога балла");
+  eq(lowAlts && lowAlts.title, "wwwww", "кандидат выше порога выбран лучшим");
+}
+
 /* ---------- чистка скобок ---------- */
 eq(api.cleanJunk("Song (Official Video)"), "Song", "убираем (Official Video)");
 eq(api.cleanJunk("Song (feat. X)"), "Song", "убираем (feat. X)");

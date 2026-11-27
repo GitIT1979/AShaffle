@@ -125,12 +125,12 @@ h3{margin:0 0 10px;font-size:15px}
 </head>
 <body>
 <div class="wrap">
-<header><h1>Ashuffle</h1><span class="ver">v11.65</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<header><h1>Ashuffle</h1><span class="ver">v11.66</span><button class="tt" id="tt" title="Тема">🌙</button></header>
 <p class="tag">Исполнители врозь — музыка вместе</p>
 <p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
 
 <div class="dz" id="dz"><span class="big">🎵</span><b>Перетащите файлы или папку сюда</b><div class="sm">или нажмите, чтобы выбрать</div></div>
-<input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff" style="display:none">
+<input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff,.ape,.alac" style="display:none">
 <input type="file" id="fdir" webkitdirectory directory multiple style="display:none">
 
 <div class="card" id="filesCard">
@@ -702,8 +702,11 @@ var DUR_TOL = 10;
 var MIN_SCORE = 0.5;
 /* Бюджет шагов поиска: цепочка запросов не тянется бесконечно */
 var _MAX_STEPS = 30;
-/* Пометка версии в самом файле расширяет допуск по длительности */
-var _wideWindow = false;
+/* Пометка версии в исходных данных («remix», «live»…) расширяет допуск по длительности.
+   Передаётся параметром, а не глобальным флагом: параллельные проверки не перезаписывают друг друга */
+function versionWide(artist, title){
+  return _VERSION_WORDS.test(String(artist||"") + " " + String(title||""));
+}
 function durOk(fileDur, candMs){
   if(!fileDur || !candMs) return true;
   return Math.abs(candMs/1000 - fileDur) <= DUR_TOL;
@@ -797,6 +800,14 @@ function isGoodMatchFlex(query, artist, title){
    3. MusicBrainz + iTunes (таймауты, retry 503/429)
    ============================================================ */
 var _mbCache = {}, _lastMBRequest = 0, _netErrors = 0;
+/* Кэши не растут бесконечно: при переполнении выметаем старую половину записей */
+function _cachePut(store, key, val, cap){
+  var ks = Object.keys(store);
+  if(ks.length >= (cap || 2000)){
+    for(var i = 0; i < (ks.length >> 1); i++) delete store[ks[i]];
+  }
+  store[key] = val;
+}
 
 function _fetchT(url, opts, ms){
   if(typeof AbortController !== "function") return fetch(url, opts);
@@ -834,7 +845,7 @@ function _mbRequest(query, limit){
       _mbFetch(url)
         .then(function(r){ return r.json(); })
         .then(function(data){
-          _mbCache[key] = data.recordings || [];
+          _cachePut(_mbCache, key, data.recordings || []);
           resolve(_mbCache[key]);
         })
         .catch(function(){ _netErrors++; resolve([]); });
@@ -907,9 +918,15 @@ function altsFor(chosen, extra, fileDur){
   self.isSelf = true;
   return [self].concat(rest);
 }
-function pickMusicBrainzResult(recordings, query, dur){
+/* Лучший кандидат: выше балл, при равенстве — более короткое название */
+function _betterCand(cur, cand){
+  if(!cur) return true;
+  if(cand.score > cur.score + 1e-9) return true;
+  return Math.abs(cand.score - cur.score) <= 1e-9 && cand.title.length < cur.title.length;
+}
+function pickMusicBrainzResult(recordings, query, dur, wide){
   if(!recordings || !recordings.length) return null;
-  var best = null, bestScore = -1, picked = [];
+  var best = null, picked = [];
   for(var i=0;i<recordings.length;i++){
     var rec = recordings[i];
     if(!rec["artist-credit"] || !rec["artist-credit"].length) continue;
@@ -917,16 +934,15 @@ function pickMusicBrainzResult(recordings, query, dur){
     var mbTitle  = stripFeat(rec.title);
     if(isPlaceholder(mbArtist) || isPlaceholder(mbTitle)) continue;
     if(!mbTitle || !/[a-zA-Zа-яА-ЯёЁ]/.test(mbTitle)) continue;
-    if(!durOk(dur, rec.length) && !(durOkExact(dur, rec.length) && (_wideWindow || nameExact(query, mbArtist, mbTitle)))) continue;
+    if(!durOk(dur, rec.length) && !(durOkExact(dur, rec.length) && (wide || nameExact(query, mbArtist, mbTitle)))) continue;
     if(!isGoodMatchFlex(query, mbArtist, mbTitle)) continue;
     var cleanTitle = String(mbTitle).trim();
     var s = matchScore(query, mbArtist, mbTitle, dur, rec.length);
-    altsPush(picked, { artist: mbArtist, title: cleanTitle, source: "MusicBrainz", score: s, dur: rec.length || 0 });
+    /* Сначала отсев по баллу — в альтернативы ⇄ непрошедшие порог не попадают */
     if(s < MIN_SCORE) continue;
-    if(s > bestScore + 1e-9 || (best && Math.abs(s - bestScore) <= 1e-9 && cleanTitle.length < best.title.length)){
-      bestScore = s;
-      best = { artist: mbArtist, title: cleanTitle, source: "MusicBrainz", score: s };
-    }
+    var cand = { artist: mbArtist, title: cleanTitle, source: "MusicBrainz", score: s, dur: rec.length || 0 };
+    altsPush(picked, cand);
+    if(_betterCand(best, cand)) best = cand;
   }
   if(best) best.alts = sortAlts(picked);
   return best;
@@ -939,10 +955,11 @@ function _jsonp(url, cbParam, timeoutMs){
     return new Promise(function(resolve){
       var name = "__asj" + (++_jsonpSeq) + "_" + Date.now();
       var script = document.createElement("script");
-      var done = false;
+      var done = false, timer = 0;
       function finish(data){
         if(done) return;
         done = true;
+        if(timer) clearTimeout(timer);
         try{ delete window[name]; }catch(e){ window[name] = undefined; }
         if(script.parentNode) script.parentNode.removeChild(script);
         if(data) return resolve(data);
@@ -953,20 +970,21 @@ function _jsonp(url, cbParam, timeoutMs){
       window[name] = function(data){ finish(data); };
       script.onerror = function(){ finish(null); };
       script.src = url + "&" + cbParam + "=" + encodeURIComponent(name);
-      setTimeout(function(){ finish(null); }, timeoutMs || 10000);
+      timer = setTimeout(function(){ finish(null); }, timeoutMs || 10000);
       document.body.appendChild(script);
     });
   }
   return attempt(0);
 }
-function lookupDeezer(term, dur, loose){
+function lookupDeezer(term, dur, loose, wide){
   if(!term) return Promise.resolve(null);
-  var wide = _wideWindow;
-  var key = "dz|" + Math.round(dur||0) + "|" + term.toLowerCase() + (loose ? "|L" : "");
+  var key = "dz|" + Math.round(dur||0) + "|" + term.toLowerCase() + (loose ? "|L" : "") + (wide ? "|W" : "");
   if(Object.prototype.hasOwnProperty.call(_dzCache, key)) return Promise.resolve(_dzCache[key]);
   var url = "https://api.deezer.com/search?q=" + encodeURIComponent(term) + "&limit=5&output=jsonp";
   return _jsonp(url, "callback", 10000).then(function(json){
-    var out = null, best = -1, picked = [];
+    /* Транспортный сбой JSONP: считаем ошибкой сети и не кэшируем */
+    if(!json){ _netErrors++; return null; }
+    var out = null, picked = [];
     ((json && json.data) || []).forEach(function(t){
       if(!t || !t.title || !t.artist || !t.artist.name) return;
       if(isPlaceholder(t.artist.name) || isPlaceholder(t.title)) return;
@@ -977,21 +995,17 @@ function lookupDeezer(term, dur, loose){
       var cand = { artist: t.artist.name, title: stripFeat(String(t.title).trim()), source: "Deezer", score: s, dur: (t.duration || 0) * 1000 };
       if(s < MIN_SCORE) return;
       altsPush(picked, cand);
-      if(s > best + 1e-9 || (out && Math.abs(s - best) <= 1e-9 && cand.title.length < out.title.length)){
-        best = s;
-        out = { artist: cand.artist, title: cand.title, source: "Deezer", score: s };
-      }
+      if(_betterCand(out, cand)) out = cand;
     });
     if(out) out.alts = sortAlts(picked);
-    _dzCache[key] = out;
+    _cachePut(_dzCache, key, out);
     return out;
   }).catch(function(){ _netErrors++; return null; });
 }
-function lookupITunes(term, dur, loose){
+function lookupITunes(term, dur, loose, wide){
   if(!CAN_ITUNES) return Promise.resolve(null);
   if(!term) return Promise.resolve(null);
-  var wide = _wideWindow;
-  var key = "it|" + Math.round(dur||0) + "|" + term.toLowerCase() + (loose ? "|L" : "");
+  var key = "it|" + Math.round(dur||0) + "|" + term.toLowerCase() + (loose ? "|L" : "") + (wide ? "|W" : "");
   if(Object.prototype.hasOwnProperty.call(_itCache, key)) return Promise.resolve(_itCache[key]);
   var now = Date.now(), wait = Math.max(0, 3200 - (now - _lastITRequest));
   return new Promise(function(resolve){
@@ -1001,7 +1015,7 @@ function lookupITunes(term, dur, loose){
       _fetchT(url, null, 12000)
         .then(function(r){ if(!r.ok) throw new Error("iTunes " + r.status); return r.json(); })
         .then(function(data){
-          var out = null, bestScore = -1, picked = [];
+          var out = null, picked = [];
           if(data.resultCount && data.results){
             for(var i=0;i<data.results.length;i++){
               var res = data.results[i];
@@ -1016,14 +1030,11 @@ function lookupITunes(term, dur, loose){
               var cand2 = { artist: res.artistName, title: cleanTitle, source: "iTunes", score: sc, dur: res.trackTimeMillis || 0 };
               if(sc < MIN_SCORE) continue;
               altsPush(picked, cand2);
-              if(sc > bestScore + 1e-9 || (out && Math.abs(sc - bestScore) <= 1e-9 && cleanTitle.length < out.title.length)){
-                bestScore = sc;
-                out = { artist: cand2.artist, title: cand2.title, source: "iTunes", score: sc };
-              }
+              if(_betterCand(out, cand2)) out = cand2;
             }
           }
           if(out) out.alts = sortAlts(picked);
-          _itCache[key] = out; resolve(out);
+          _cachePut(_itCache, key, out); resolve(out);
         })
         .catch(function(){ _netErrors++; resolve(null); });
     }, wait);
@@ -1033,11 +1044,7 @@ function lookupITunes(term, dur, loose){
 /* ============================================================
    4. ИМЯ ФАЙЛА С НОМЕРОМ (001, 002, ...)
    ============================================================ */
-function pad3(n){ 
-  var s = String(n);
-  while(s.length < 3) s = "0" + s;
-  return s;
-}
+function pad3(n){ return String(n).padStart(3, "0"); }
 var _WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 function safeNamePart(s){
   return String(s)
@@ -1679,7 +1686,8 @@ function inspectEntry(e){
         if(changed){ e.info.fromTags = true; e.info._raw = ""; }
       }
     }
-    refreshRow(e);
+    /* Строку с открытой формой правки не трогаем: не съедим фокус и набранный текст */
+    if(e.id!==editingId) refreshRow(e);
   }).catch(function(){});
 }
 
@@ -2038,7 +2046,7 @@ function lookupTrack(info, dur){
   if(isPlaceholder(a)) a = "";
   /* Заглушка или непроизносимая запись («花電車») — ищем по одному названию */
   if(isPlaceholder(a) || !tokens(a).length) a = "";
-  _wideWindow = _VERSION_WORDS.test(String(info.artist||"") + " " + String(info.title||""));
+  var wide = versionWide(info.artist, info.title);
   var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";
   /* Без исполнителя запрос строится по названию, а не по сырому имени файла */
   var term=(primary || (a ? raw : t) || raw).replace(/[-_]+/g," ").replace(/\s+/g," ").trim();
@@ -2065,22 +2073,22 @@ function lookupTrack(info, dur){
   var steps=[];
   function pushMBPrecise(){
     steps.push(guardArtist(function(){
-      return lookupMusicBrainzByArtistTitle(a, titleQ || t).then(function(r){ return pickMusicBrainzResult(r, primary, dur); });
+      return lookupMusicBrainzByArtistTitle(a, titleQ || t).then(function(r){ return pickMusicBrainzResult(r, primary, dur, wide); });
     }, a, t));
   }
   function pushMBTerm(term){
     steps.push(guardArtist(function(){
-      return lookupMusicBrainzByRecording(term).then(function(r){ return pickMusicBrainzResult(r, term, dur); });
+      return lookupMusicBrainzByRecording(term).then(function(r){ return pickMusicBrainzResult(r, term, dur, wide); });
     }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   function pushDeezer(term){
     /* Без исполнителя правило «лишних слов» не работает: в кандидате всегда есть имя артиста */
     var l = !a;
-    steps.push(guardArtist(function(){ return lookupDeezer(term, dur, l); }, a && term.indexOf(a) === 0 ? a : "", t));
+    steps.push(guardArtist(function(){ return lookupDeezer(term, dur, l, wide); }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   function pushITunes(term){
     var l = !a;
-    steps.push(guardArtist(function(){ return lookupITunes(term, dur, l); }, a && term.indexOf(a) === 0 ? a : "", t));
+    steps.push(guardArtist(function(){ return lookupITunes(term, dur, l, wide); }, a && term.indexOf(a) === 0 ? a : "", t));
   }
   /* Запрос без исполнителя не должен подменять исполнителя: сверяем с тем, что в файле */
   function guardTitle(expectedTitle, fn){
@@ -2124,14 +2132,14 @@ function lookupTrack(info, dur){
     var restCyr = als.rest && !/[а-яё]/i.test(als.rest) ? untranslit(als.rest) : "";
     var aliasTermCyr = (restCyr ? (als.alias + " " + restCyr) : "").trim();
     if(aliasTermCyr && aliasTermCyr.toLowerCase() !== aliasTerm.toLowerCase()){
-      steps.push(function(){ return lookupDeezer(aliasTermCyr, dur); });
-      steps.push(function(){ return lookupITunes(aliasTermCyr, dur); });
+      steps.push(function(){ return lookupDeezer(aliasTermCyr, dur, 0, wide); });
+      steps.push(function(){ return lookupITunes(aliasTermCyr, dur, 0, wide); });
     }
     if(aliasTerm && aliasTerm.toLowerCase() !== qterm.toLowerCase()){
-      steps.push(function(){ return lookupDeezer(aliasTerm, dur); });
-      steps.push(function(){ return lookupITunes(aliasTerm, dur); });
+      steps.push(function(){ return lookupDeezer(aliasTerm, dur, 0, wide); });
+      steps.push(function(){ return lookupITunes(aliasTerm, dur, 0, wide); });
       steps.push(function(){
-        return lookupMusicBrainzByRecording(aliasTerm).then(function(r){ return pickMusicBrainzResult(r, aliasTerm, dur); });
+        return lookupMusicBrainzByRecording(aliasTerm).then(function(r){ return pickMusicBrainzResult(r, aliasTerm, dur, wide); });
       });
     }
   }
@@ -2140,10 +2148,10 @@ function lookupTrack(info, dur){
   if(trimmed){
     var trTerm = (trimmed + " " + (titleQ || t)).replace(/\s+/g, " ").trim();
     if(trTerm.toLowerCase() !== qterm.toLowerCase()){
-      steps.push(guardArtist(function(){ return lookupDeezer(trTerm, dur); }, trimmed, titleQ || t));
-      steps.push(guardArtist(function(){ return lookupITunes(trTerm, dur); }, trimmed, titleQ || t));
+      steps.push(guardArtist(function(){ return lookupDeezer(trTerm, dur, 0, wide); }, trimmed, titleQ || t));
+      steps.push(guardArtist(function(){ return lookupITunes(trTerm, dur, 0, wide); }, trimmed, titleQ || t));
       steps.push(guardArtist(function(){
-        return lookupMusicBrainzByRecording(trTerm).then(function(r){ return pickMusicBrainzResult(r, trTerm, dur); });
+        return lookupMusicBrainzByRecording(trTerm).then(function(r){ return pickMusicBrainzResult(r, trTerm, dur, wide); });
       }, trimmed, titleQ || t));
     }
   }
@@ -2154,19 +2162,19 @@ function lookupTrack(info, dur){
   if(titleJunk && aw.length >= 2 && aw.length <= 3){
     var lastWord = aw[aw.length-1];
     var revTerm = aw.slice().reverse().join(" ");
-    steps.push(guardArtist(function(){ return lookupDeezer(a, dur); }, lastWord, t));
-    steps.push(guardArtist(function(){ return lookupDeezer(revTerm, dur); }, lastWord, t));
-    steps.push(guardArtist(function(){ return lookupITunes(revTerm, dur); }, lastWord, t));
+    steps.push(guardArtist(function(){ return lookupDeezer(a, dur, 0, wide); }, lastWord, t));
+    steps.push(guardArtist(function(){ return lookupDeezer(revTerm, dur, 0, wide); }, lastWord, t));
+    steps.push(guardArtist(function(){ return lookupITunes(revTerm, dur, 0, wide); }, lastWord, t));
   }
   /* Имя строчными: «жанго» → «Джанго» */
   var capA = capitalizeArtist(a);
   if(capA){
     var capTerm = (capA + " " + (titleQ || t)).replace(/\s+/g, " ").trim();
     if(capTerm.toLowerCase() !== qterm.toLowerCase()){
-      steps.push(guardArtist(function(){ return lookupDeezer(capTerm, dur); }, capA, titleQ || t));
-      steps.push(guardArtist(function(){ return lookupITunes(capTerm, dur); }, capA, titleQ || t));
+      steps.push(guardArtist(function(){ return lookupDeezer(capTerm, dur, 0, wide); }, capA, titleQ || t));
+      steps.push(guardArtist(function(){ return lookupITunes(capTerm, dur, 0, wide); }, capA, titleQ || t));
       steps.push(guardArtist(function(){
-        return lookupMusicBrainzByRecording(capTerm).then(function(r){ return pickMusicBrainzResult(r, capTerm, dur); });
+        return lookupMusicBrainzByRecording(capTerm).then(function(r){ return pickMusicBrainzResult(r, capTerm, dur, wide); });
       }, capA, titleQ || t));
     }
   }
@@ -2175,10 +2183,10 @@ function lookupTrack(info, dur){
   if(shaved){
     var shTerm = (shaved + " " + (titleQ || t)).replace(/\s+/g, " ").trim();
     if(shTerm.toLowerCase() !== qterm.toLowerCase()){
-      steps.push(guardArtist(function(){ return lookupDeezer(shTerm, dur); }, shaved, titleQ || t));
-      steps.push(guardArtist(function(){ return lookupITunes(shTerm, dur); }, shaved, titleQ || t));
+      steps.push(guardArtist(function(){ return lookupDeezer(shTerm, dur, 0, wide); }, shaved, titleQ || t));
+      steps.push(guardArtist(function(){ return lookupITunes(shTerm, dur, 0, wide); }, shaved, titleQ || t));
       steps.push(guardArtist(function(){
-        return lookupMusicBrainzByRecording(shTerm).then(function(r){ return pickMusicBrainzResult(r, shTerm, dur); });
+        return lookupMusicBrainzByRecording(shTerm).then(function(r){ return pickMusicBrainzResult(r, shTerm, dur, wide); });
       }, shaved, titleQ || t));
     }
   }
@@ -2189,8 +2197,8 @@ function lookupTrack(info, dur){
   var unq=untranslit(qterm);
   if(unq && unq !== qterm.toLowerCase() && /[а-яё]/.test(unq)){
     /* Русские названия ищем и в каталогах, не только в MusicBrainz */
-    steps.push(function(){ return lookupDeezer(unq, dur, true); });
-    steps.push(function(){ return lookupITunes(unq, dur, true); });
+    steps.push(function(){ return lookupDeezer(unq, dur, true, wide); });
+    steps.push(function(){ return lookupITunes(unq, dur, true, wide); });
     pushMBTerm(capWords(unq));
     /* MusicBrainz хранит кредиты вида «Джанго & Екатерина Гусева»:
        отдельно ищем кириллическое название, а исполнителя сверяем сами */
@@ -2203,7 +2211,7 @@ function lookupTrack(info, dur){
         var q = firstCyr.length >= 3 ? lookupMusicBrainzByArtistTitle(capWords(firstCyr), capWords(unqT))
                                       : lookupMusicBrainzByRecording(capWords(unqT));
         return q.then(function(r){
-          return pickMusicBrainzResult(r, (unqA + " " + unqT).trim(), dur);
+          return pickMusicBrainzResult(r, (unqA + " " + unqT).trim(), dur, wide);
         });
       });
     }
@@ -2219,15 +2227,15 @@ function lookupTrack(info, dur){
   if(shortTerm){ pushDeezer(shortTerm); pushITunes(shortTerm); }
   /* Неполный исполнитель: первое слово имени */
   if(shortArtistTerm){
-    steps.push(guardTitle(titleQ || t, function(){ return lookupDeezer(shortArtistTerm, dur); }));
-    steps.push(guardTitle(titleQ || t, function(){ return lookupITunes(shortArtistTerm, dur); }));
+    steps.push(guardTitle(titleQ || t, function(){ return lookupDeezer(shortArtistTerm, dur, 0, wide); }));
+    steps.push(guardTitle(titleQ || t, function(){ return lookupITunes(shortArtistTerm, dur, 0, wide); }));
   }
   /* Совсем без исполнителя — по одному названию; название кандидата тоже проверяем */
   if(titleOnly){
-    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupDeezer(titleOnly, dur, true); }, a)));
-    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupITunes(titleOnly, dur, true); }, a)));
+    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupDeezer(titleOnly, dur, true, wide); }, a)));
+    steps.push(guardTitle(titleOnly, guardArtist(function(){ return lookupITunes(titleOnly, dur, true, wide); }, a)));
     steps.push(guardTitle(titleOnly, guardArtist(function(){
-      return lookupMusicBrainzByRecording(titleOnly).then(function(r){ return pickMusicBrainzResult(r, titleOnly, dur); });
+      return lookupMusicBrainzByRecording(titleOnly).then(function(r){ return pickMusicBrainzResult(r, titleOnly, dur, wide); });
     }, a)));
   }
   var headWord = String(a||"").split(/\s+/)[0].replace(/[-–—]+$/, "");
@@ -2242,12 +2250,12 @@ function lookupTrack(info, dur){
         if(!q || prefSeen[q.toLowerCase()]) return;
         prefSeen[q.toLowerCase()] = 1;
         steps.push(function(){
-          return lookupDeezer(q, dur, true).then(function(f){ return tailOk(f, allWords) ? f : null; });
+          return lookupDeezer(q, dur, true, wide).then(function(f){ return tailOk(f, allWords) ? f : null; });
         });
         var q2 = stripFeatCredit(q);
         if(q2 && q2 !== q){
           steps.push(function(){
-            return lookupDeezer(q2, dur, true).then(function(f){ return tailOk(f, allWords) ? f : null; });
+            return lookupDeezer(q2, dur, true, wide).then(function(f){ return tailOk(f, allWords) ? f : null; });
           });
         }
       })(pk);
@@ -2256,10 +2264,10 @@ function lookupTrack(info, dur){
   /* Последняя попытка: вся фраза как название — когда в исполнителя попал кусок названия */
   var phrase = phraseTitle(a, t);
   if(phrase && phrase.toLowerCase() !== qterm.toLowerCase() && tokens(phrase).length >= 3){
-    steps.push(guardTitle(phrase, function(){ return lookupDeezer(phrase, dur, true); }));
-    steps.push(guardTitle(phrase, function(){ return lookupITunes(phrase, dur, true); }));
+    steps.push(guardTitle(phrase, function(){ return lookupDeezer(phrase, dur, true, wide); }));
+    steps.push(guardTitle(phrase, function(){ return lookupITunes(phrase, dur, true, wide); }));
     steps.push(guardTitle(phrase, function(){
-      return lookupMusicBrainzByRecording(capWords(phrase)).then(function(r){ return pickMusicBrainzResult(r, phrase, dur); });
+      return lookupMusicBrainzByRecording(capWords(phrase)).then(function(r){ return pickMusicBrainzResult(r, phrase, dur, wide); });
     }));
   }
   /* Последняя попытка: первое слово исполнителя + хвост названия.
@@ -2276,10 +2284,10 @@ function lookupTrack(info, dur){
       asked[key] = 1;
       /* Название в кандидате должно состоять из слов файла — нового не выдумываем */
       steps.push(guardArtist(function(){
-        return lookupDeezer(q, dur, true).then(function(f){ return tailOk(f, allWords) ? f : null; });
+        return lookupDeezer(q, dur, true, wide).then(function(f){ return tailOk(f, allWords) ? f : null; });
       }, headWord, tail));
       steps.push(guardArtist(function(){
-        return lookupITunes(q, dur, true).then(function(f){ return tailOk(f, allWords) ? f : null; });
+        return lookupITunes(q, dur, true, wide).then(function(f){ return tailOk(f, allWords) ? f : null; });
       }, headWord, tail));
     });
   }
@@ -2306,6 +2314,8 @@ function verifyQueue(todo){
     if(cancelVerify){ st.cancelled=true; return Promise.resolve(st); }
     if(i>=todo.length) return Promise.resolve(st);
     var f=todo[i], netAt=_netErrors;
+    /* Пометка версии из самого файла: тот же допуск, что внутри lookupTrack */
+    var wide = versionWide(f.info.artist, f.info.title);
     markProcessing(f);
     pup(i, todo.length, "Проверяю "+(i+1)+" из "+todo.length+": "+f.name);
     /* Правка пользователя запомнена — в интернет не идём */
@@ -2332,13 +2342,13 @@ function verifyQueue(todo){
       });
     }).then(function(found){
       /* Латиницу пробуем заменить кириллическим написанием того же трека */
-      return preferCyrillic(found, f.duration, f.info.artist);
+      return preferCyrillic(found, f.duration, f.info.artist, wide);
     }).then(function(found){
       /* Исполнитель уже русский, а название ещё латиницей */
-      return preferCyrillicTitle(found, f.duration, f.info.artist);
+      return preferCyrillicTitle(found, f.duration, f.info.artist, wide);
     }).then(function(found){
       /* Полный кредит: «G-Eazy & Halsey» вместо «G-Eazy» */
-      return completeCredit(found, f.info, f.duration);
+      return completeCredit(found, f.info, f.duration, wide);
     }).then(function(found){
       if(found){
         /* Если имя отличается только регистром, оставляем написание из файла */
@@ -2440,26 +2450,26 @@ function betterCredit(found, cand, srcArtist){
   if(cand.alts) cand.alts = mergeAlts(cand.alts, found.alts);
   return cand;
 }
-function completeCredit(found, info, dur){
+function completeCredit(found, info, dur, wide){
   if(!found || !found.artist) return Promise.resolve(found);
   if(!creditGaps(found.artist, info.artist).length) return Promise.resolve(found);
   var term = (foldMixed(info.artist||"") + " " + foldMixed(info.title||""))
                .replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
   if(!term) return Promise.resolve(found);
-  return lookupITunes(term, dur).then(function(it){
+  return lookupITunes(term, dur, 0, wide).then(function(it){
     var pick = betterCredit(found, it, info.artist);
     if(pick) return pick;
-    return lookupDeezer(term, dur).then(function(dz){
+    return lookupDeezer(term, dur, 0, wide).then(function(dz){
       var p2 = betterCredit(found, dz, info.artist);
       if(p2) return p2;
       /* Второй заход — по чистому «исполнитель + название»: полный кредит
          в каталоге часто записан именно так */
       var clean = ((found.artist || "") + " " + (found.title || "")).trim();
       if(!clean || clean.toLowerCase() === term.toLowerCase()) return found;
-      return lookupITunes(clean, dur).then(function(it2){
+      return lookupITunes(clean, dur, 0, wide).then(function(it2){
         var p3 = betterCredit(found, it2, info.artist);
         if(p3) return p3;
-        return lookupDeezer(clean, dur).then(function(dz2){
+        return lookupDeezer(clean, dur, 0, wide).then(function(dz2){
           return betterCredit(found, dz2, info.artist) || found;
         });
       });
@@ -2468,7 +2478,7 @@ function completeCredit(found, info, dur){
 }
 
 /* Если найденный исполнитель записан латиницей, ищем тот же трек кириллицей */
-function preferCyrillic(found, dur, sourceArtist){
+function preferCyrillic(found, dur, sourceArtist, wide){
   if(!found || !found.artist) return Promise.resolve(found);
   var artist = found.artist;
   if(!/[A-Za-z]/.test(artist) || /[А-Яа-яЁё]/.test(artist)) return Promise.resolve(found);
@@ -2484,9 +2494,9 @@ function preferCyrillic(found, dur, sourceArtist){
   var guess = untranslit(artist);
   if(!/[а-яё]/.test(guess)) return Promise.resolve(found);
   var term = (guess + " " + (found.title || "")).trim();
-  return lookupDeezer(term, dur).then(function(alt){
+  return lookupDeezer(term, dur, 0, wide).then(function(alt){
     if(alt && alt.artist && /[А-Яа-яЁё]/.test(alt.artist)){ alt.alts = mergeAlts(alt.alts, found.alts); return alt; }
-    return lookupITunes(term, dur).then(function(alt2){
+    return lookupITunes(term, dur, 0, wide).then(function(alt2){
       if(alt2 && alt2.artist && /[А-Яа-яЁё]/.test(alt2.artist)){ alt2.alts = mergeAlts(alt2.alts, found.alts); return alt2; }
       return found;
     });
@@ -2494,7 +2504,7 @@ function preferCyrillic(found, dur, sourceArtist){
 }
 
 /* Название записано латиницей, а трек русский — ищем кириллическое написание */
-function preferCyrillicTitle(found, dur, sourceArtist){
+function preferCyrillicTitle(found, dur, sourceArtist, wide){
   if(!found || !found.title) return Promise.resolve(found);
   var title = found.title, artist = found.artist || "";
   if(/[А-Яа-яЁё]/.test(title)) return Promise.resolve(found);
@@ -2510,12 +2520,12 @@ function preferCyrillicTitle(found, dur, sourceArtist){
   }
   function cyrArtistOk(c){ return !!c && !!c.artist && /[А-Яа-яЁё]/.test(c.artist); }
   var term = (cyrArtist + " " + cyrTitle).trim();
-  return lookupDeezer(term, dur, true).then(function(alt){
+  return lookupDeezer(term, dur, true, wide).then(function(alt){
     if(alt && cyrArtistOk(alt) && sameTitle(alt)){
       alt.alts = mergeAlts(alt.alts, found.alts);
       return alt;
     }
-    return lookupITunes(term, dur, true).then(function(alt2){
+    return lookupITunes(term, dur, true, wide).then(function(alt2){
       if(alt2 && cyrArtistOk(alt2) && sameTitle(alt2)){
         alt2.alts = mergeAlts(alt2.alts, found.alts);
         return alt2;
@@ -2598,6 +2608,7 @@ function startRename(opts){
         results.push({
           file: blob,
           name: finalName,
+          fid: f.id,
           artist: f.info.artist || "unknown_artist",
           source: f.info.source || "",
           size: blob.size,
@@ -2615,8 +2626,9 @@ function confirmResults(){
   if(!madeTrue || confirmed || busy || verifying || !results.length) return;
   /* Музыка не прерывается: переносим метку на строку результата */
   if(playingId){
-    for(var pi=0; pi<files.length; pi++){
-      if(files[pi].id === playingId && results[pi]){ playingRes = pi; break; }
+    /* Метка переносится по id файла: порядок results не обязан совпадать с files */
+    for(var pi=0; pi<results.length; pi++){
+      if(results[pi].fid === playingId){ playingRes = pi; break; }
     }
     drawResults();
   }
@@ -2713,6 +2725,7 @@ function startShuffle(useNumbered){
         results.push({
           file: blob,
           name: finalName,
+          fid: f.id,
           artist: f.info.artist || "unknown_artist",
           source: f.info.source || "",
           size: blob.size,
@@ -2795,6 +2808,8 @@ function _crc32(u8){
 }
 function _w16(a,o,v){a[o]=v&0xFF;a[o+1]=(v>>>8)&0xFF;}
 function _w32(a,o,v){a[o]=v&0xFF;a[o+1]=(v>>>8)&0xFF;a[o+2]=(v>>>16)&0xFF;a[o+3]=(v>>>24)&0xFF;}
+/* Архив целиком собирается в памяти — за этим пределом вкладка скорее упадёт, чем покажет ошибку */
+var ZIP_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
 function buildZipBlob(entries, onProgress){
   var enc = new TextEncoder();
@@ -2812,11 +2827,11 @@ function buildZipBlob(entries, onProgress){
   if(files.length > 65535){
     return Promise.reject(new Error("файлов больше 65535 — ZIP столько не хранит"));
   }
-  if(localTotal + cdTotal + 22 > 0xFFFFFFFF){
-    return Promise.reject(new Error("архив больше 4 ГБ — сохраните результат в папку"));
+  if(localTotal + cdTotal + 22 > ZIP_MAX_BYTES){
+    return Promise.reject(new Error("архив больше 2 ГБ — сохраните результат в папку"));
   }
   var now = new Date();
-  var dosTime = ((now.getHours() & 0x1f) << 11) | ((now.getMinutes() & 0x3f) << 5) | ((now.getSeconds() / 2) & 0x1f);
+  var dosTime = ((now.getHours() & 0x1f) << 11) | ((now.getMinutes() & 0x3f) << 5) | ((now.getSeconds() >> 1) & 0x1f);
   var dosDate = (((now.getFullYear() - 1980) & 0x7f) << 9) | (((now.getMonth() + 1) & 0x0f) << 5) | (now.getDate() & 0x1f);
   var out = new Uint8Array(localTotal + cdTotal + 22);
   var off = 0, done = 0;
@@ -2899,8 +2914,8 @@ function saveAllToDir(dirHandle){
       var name = r.name;
       if(usedNames[name]){
         usedNames[name]++;
-        var m = name.match(/^(.*)(\.[^.]+)$/);
-        name = m[1] + "_" + usedNames[name] + m[2];
+        var m = name.match(/^(.*)(.[^.]+)$/);
+        name = m ? (m[1] + "_" + usedNames[name] + m[2]) : (name + "_" + usedNames[name]);
       } else {
         usedNames[name] = 1;
       }
@@ -3055,7 +3070,7 @@ $("list").addEventListener("click", function(e){
     var p0=files[idx].parsed;
     /* Возврат к исходному имени отменяет и запомненную правку */
     memDel(files[idx].name);
-    files[idx].info={ artist:p0.artist, title:p0.title, _raw:p0._raw, status:"raw", source:"" };
+    files[idx].info={ artist:p0.artist, title:p0.title, _raw:p0._raw, _glued:!!p0._glued, status:"raw", source:"" };
     madeTrue=false; confirmed=false;
     editingId=0; dirty=true; resetResults(); draw();
     stt("Возвращено имя из файла: "+files[idx].name);
