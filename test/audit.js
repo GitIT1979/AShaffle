@@ -5,7 +5,6 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const HTML = fs.readFileSync(path.join(__dirname, "..", "AShaffle.html"), "utf8");
 const EXPORTS = [
   "parseTrackInfo", "readMp3Tags", "usefulTag", "foldMixed", "stripSiteJunk",
   "stripNamePrefix", "stripNoiseBrackets", "norm", "pullCreditFromTitle",
@@ -72,7 +71,7 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 sandbox.self = sandbox;
 
-let code = HTML.match(/<script>([\s\S]*?)<\/script>/)[1];
+let code = require("./load-app.js").appCode();
 if (!/\}\)\(\);\s*$/.test(code)) throw new Error("неожиданное окончание скрипта");
 code = code.replace(/\}\)\(\);\s*$/,
   "globalThis.__api={" + EXPORTS.map(n => n + ":" + n).join(",") + "};\n})();");

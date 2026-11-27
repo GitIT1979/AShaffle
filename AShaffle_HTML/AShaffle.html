@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ashuffle</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<header><h1>Ashuffle</h1><span class="ver">v11.67</span><button class="tt" id="tt" title="Тема">🌙</button></header>
+<p class="tag">Исполнители врозь — музыка вместе</p>
+<p class="hint">Загрузи отдельные файлы или папку сразу. Нажмёшь <b>🪄 Make this true!</b> — и твои треки, будь они под покровительством Мнемозины, смогут вспомнить свои истинные имена. Нажмёшь <b>🎲 Ashuffle this!</b> — и программа по воле Фортуны перемешает твои треки и сделает твой плейлист непривычным.</p>
+
+<div class="dz" id="dz"><span class="big">🎵</span><b>Перетащите файлы или папку сюда</b><div class="sm">или нажмите, чтобы выбрать</div></div>
+<input type="file" id="fi" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.wav,.aac,.wma,.opus,.aiff,.ape,.alac" style="display:none">
+<input type="file" id="fdir" webkitdirectory directory multiple style="display:none">
+
+<div class="card" id="filesCard">
+<h3>Файлы <span class="bg" id="cnt">0</span></h3>
+<div class="row" style="margin-bottom:10px">
+  <button class="btn" id="add" type="button">➕ Добавить файлы</button>
+  <button class="btn" id="addDir" type="button">📁 Добавить папку</button>
+  <button class="btn" id="clr" type="button">🗑 Очистить</button>
+</div>
+<div class="fl" id="list"></div>
+<div class="toast" id="st" role="status" aria-live="polite"></div>
+<div class="pbar" id="pbar">
+  <span class="pn" id="pbn">—</span>
+  <button class="ic" id="pbp" type="button" title="Пауза">⏸</button>
+  <input type="range" id="pbs" min="0" max="1000" value="0" step="1" aria-label="Позиция трека">
+  <span class="pt" id="pbt">0:00</span>
+  <button class="ic" id="pbx" type="button" title="Остановить">✕</button>
+</div>
+<audio id="player" preload="none"></audio>
+</div>
+
+<div class="actions" id="actions">
+  <button class="big-btn mt" id="makeTrue" type="button">🪄 Make this true!</button>
+  <button class="btn ok" id="confirm" type="button">OK</button>
+</div>
+
+<div class="pw" id="pw"><div class="pi"><span id="pl">Обработка…</span><span id="pp">0%</span></div><div class="pb"><div class="pf" id="pf"></div></div></div>
+
+<div class="card results" id="results">
+<h3>Готово! <span class="bg" id="rcnt">0</span></h3>
+<div class="warn" id="fsHint">⚠️ Выбор папки доступен только при открытии через HTTPS или <code>localhost</code>. Сейчас все файлы сохранятся одним ZIP-архивом.</div>
+<div class="res-list" id="resList"></div>
+<div class="row" style="margin-top:10px">
+  <button class="btn bl" id="dlAll" type="button" title="Сохранить результат">💾 Скачать все в папку</button>
+</div>
+<button class="big-btn" id="go" type="button">🎲 Ashuffle this!</button>
+</div>
+
+</div>
+
+<script src="js/00-core.js"></script>
+<script src="js/11-parse.js"></script>
+<script src="js/20-catalog.js"></script>
+<script src="js/30-name-shuffle.js"></script>
+<script src="js/40-id3.js"></script>
+<script src="js/50-tags.js"></script>
+<script src="js/60-ui.js"></script>
+<script src="js/70-lookup.js"></script>
+<script src="js/71-verify.js"></script>
+<script src="js/72-credit.js"></script>
+<script src="js/80-pipeline.js"></script>
+<script src="js/81-zip.js"></script>
+<script src="js/90-main.js"></script>
+</body>
+</html>

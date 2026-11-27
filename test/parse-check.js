@@ -1,6 +1,5 @@
-﻿const fs=require('fs'),vm=require('vm');
-const html=fs.readFileSync('AShaffle.html','utf8');
-let code=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const fs=require('fs'),vm=require('vm');
+let code=require('./load-app.js').appCode();
 code=code.replace(/\}\)\(\);\s*$/, "globalThis.__a={parseTrackInfo:parseTrackInfo};})();");
 const el=()=>({textContent:'',innerHTML:'',style:{},dataset:{},classList:{add(){},remove(){}},addEventListener(){},appendChild(){},querySelector(){return null},querySelectorAll(){return []},setAttribute(){},removeAttribute(){},getAttribute(){return null}});
 const els={};

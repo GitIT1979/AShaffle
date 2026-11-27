@@ -1,5 +1,5 @@
 "use strict";
-/* Тестовый стенд: вынимает скрипт из AShaffle.html, исполняет его в песочнице
+/* Тестовый стенд: склеивает js-блоки из AShaffle_HTML/js, исполняет их в песочнице
    с минимальным DOM и проверяет чистые функции. Запуск: node test/harness.js */
 const fs = require("fs");
 const path = require("path");
@@ -19,10 +19,9 @@ function eq(actual, expected, label) {
 function ok(cond, label) { eq(!!cond, true, label); }
 
 /* ---------- песочница ---------- */
-const html = fs.readFileSync(path.join(ROOT, "AShaffle.html"), "utf8");
-const m = html.match(/<script>([\s\S]*?)<\/script>/);
-if (!m) throw new Error("не найден inline-скрипт");
-let code = m[1];
+const html = fs.readFileSync(path.join(ROOT, "AShaffle_HTML", "AShaffle.html"), "utf8");
+if (!/<script src="js\//.test(html)) throw new Error("в AShaffle.html нет ссылок на js-блоки");
+let code = require("./load-app.js").appCode();
 if (!/\}\)\(\);\s*$/.test(code)) throw new Error("неожиданное окончание скрипта");
 code = code.replace(/\}\)\(\);\s*$/,
   "globalThis.__api={parseTrackInfo:parseTrackInfo,makeName:makeName," +
