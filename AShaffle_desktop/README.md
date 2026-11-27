@@ -5,7 +5,7 @@
 
 ## Запуск
 
-Готовый файл: `AShaffle_desktop.exe` в этой папке — самодостаточный, веб-ресурсы
+Готовый файл: `AShuffle.exe` в этой папке — самодостаточный, веб-ресурсы
 внутри. При старте поднимает локальный сервер на `127.0.0.1:8123` (дальше
 по порядку, если порт занят) и открывает окно приложения.
 
@@ -22,7 +22,7 @@ build.bat
 
 ```
 python -m pip install pywebview pyinstaller
-pyinstaller --onefile --windowed --name AShaffle_desktop --clean --distpath . --add-data "..\AShaffle_HTML;web" app.py
+pyinstaller --onefile --windowed --name AShuffle --clean --distpath . --add-data "..\AShaffle_HTML;web" app.py
 ```
 
 ## Структура
@@ -30,4 +30,4 @@ pyinstaller --onefile --windowed --name AShaffle_desktop --clean --distpath . --
 - `app.py` — локальный сервер + окно webview; в собранном exe берёт ресурсы
   из распаковки (`sys._MEIPASS/web`), в исходниках — из `../AShaffle_HTML`
 - `build.bat` — команда сборки
-- `AShaffle_desktop.exe` — готовая сборка (лежит в корне этой папки)
+- `AShuffle.exe` — готовая сборка (лежит в корне этой папки)

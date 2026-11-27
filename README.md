@@ -17,7 +17,7 @@ python -m http.server 8123
 
 ## Десктопная версия (Windows)
 
-В `AShaffle_desktop/` лежит `AShaffle_desktop.exe` — тот же код в окне WebView2.
+В `AShaffle_desktop/` лежит `AShuffle.exe` — тот же код в окне WebView2.
 Файлы рядом не нужны: при старте приложение само поднимает сервер на
 `127.0.0.1` и открывает окно. Возможности те же, что у HTML-версии, включая
 «Сохранить все в папку». Пересборка: `AShaffle_desktop/build.bat`
