@@ -1,2 +1,4 @@
 test/tmp/
 test/tracks/
+AShaffle_desktop/build/
+AShaffle_desktop/*.spec
