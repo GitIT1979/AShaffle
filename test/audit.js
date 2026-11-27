@@ -72,9 +72,8 @@ sandbox.globalThis = sandbox;
 sandbox.self = sandbox;
 
 let code = require("./load-app.js").appCode();
-if (!/\}\)\(\);\s*$/.test(code)) throw new Error("неожиданное окончание скрипта");
-code = code.replace(/\}\)\(\);\s*$/,
-  "globalThis.__api={" + EXPORTS.map(n => n + ":" + n).join(",") + "};\n})();");
+if (code.indexOf("lookupTrack") < 0) throw new Error("код приложения не собрался");
+code += "\n;globalThis.__api={" + EXPORTS.map(n => n + ":" + n).join(",") + "};\n";
 vm.createContext(sandbox);
 vm.runInContext(code, sandbox);
 const api = sandbox.__api;

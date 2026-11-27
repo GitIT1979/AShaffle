@@ -1,3 +1,4 @@
+"use strict";
 /* Шаг 1: вернуть трекам имена, сохранив исходный порядок */
 function makeTrue(){
   if(!files.length || busy || verifying) return;

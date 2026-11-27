@@ -102,7 +102,12 @@ $("clr").addEventListener("click",function(){
   draw();drawResults();$("results").classList.remove("show");phide();
   stt("Очищено"); updateGoBtn();
 });
-$("tt").addEventListener("click",function(){var d=document.documentElement.getAttribute("data-theme")==="dark";theme(d?"light":"dark")});
+$("tt").addEventListener("click",function(){
+  /* По кругу: как в системе → светлая → тёмная */
+  var order=["system","light","dark"], cur=themeMode(), next=order[(order.indexOf(cur)+1)%3];
+  theme(next);
+  stt("Тема: "+(next==="system"?"как в системе":next==="dark"?"тёмная":"светлая"));
+});
 
 /* Строка проигрывания: ползунок, пауза, стоп */
 (function(){
@@ -180,6 +185,9 @@ if(!CAN_PICK_DIR){
   $("dlAll").title = "Сохранить файлы в выбранную папку";
 }
 
-try{ if(localStorage.getItem("ashuffle-theme")==="dark") theme("dark"); }catch(e){}
+theme(themeMode());
+if(_sysTheme && _sysTheme.addEventListener){
+  /* Смена темы в ОС при режиме «как в системе» */
+  _sysTheme.addEventListener("change", function(){ if(themeMode()==="system") applyTheme("system"); });
+}
 draw();stt("Готов к работе");
-})();

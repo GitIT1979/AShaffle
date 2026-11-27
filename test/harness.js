@@ -22,9 +22,8 @@ function ok(cond, label) { eq(!!cond, true, label); }
 const html = fs.readFileSync(path.join(ROOT, "AShaffle_HTML", "AShaffle.html"), "utf8");
 if (!/<script src="js\//.test(html)) throw new Error("в AShaffle.html нет ссылок на js-блоки");
 let code = require("./load-app.js").appCode();
-if (!/\}\)\(\);\s*$/.test(code)) throw new Error("неожиданное окончание скрипта");
-code = code.replace(/\}\)\(\);\s*$/,
-  "globalThis.__api={parseTrackInfo:parseTrackInfo,makeName:makeName," +
+if (code.indexOf("parseTrackInfo") < 0) throw new Error("код приложения не собрался");
+code += "\n;globalThis.__api={parseTrackInfo:parseTrackInfo,makeName:makeName," +
   "stripTrackPrefix:stripTrackPrefix,safeNamePart:safeNamePart,trySplit:trySplit,stripNamePrefix:stripNamePrefix," +
   "buildZipBlob:buildZipBlob,makeRenamedFile:makeRenamedFile," +
   "readId3Tag:readId3Tag,buildId3v24Tag:buildId3v24Tag,ext:ext," +
@@ -49,7 +48,7 @@ code = code.replace(/\}\)\(\);\s*$/,
   "expandOrdinals:expandOrdinals,phraseTitle:phraseTitle,dropJunkPrefix:dropJunkPrefix," +
   "versionTail:versionTail,stripFeatCredit:stripFeatCredit," +
   "memGet:memGet,memSet:memSet,memDel:memDel," +
-  "DUR_TOL:DUR_TOL,DUR_TOL_EXACT:DUR_TOL_EXACT,MIN_SCORE:MIN_SCORE,SUSPICIOUS:SUSPICIOUS};\n})();");
+  "DUR_TOL:DUR_TOL,DUR_TOL_EXACT:DUR_TOL_EXACT,MIN_SCORE:MIN_SCORE,SUSPICIOUS:SUSPICIOUS};\n";
 
 function makeEl() {
   return {

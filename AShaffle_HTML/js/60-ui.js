@@ -1,3 +1,4 @@
+"use strict";
 /* ============================================================
    7. UI
    ============================================================ */
@@ -110,7 +111,7 @@ function rowHtml(f,i){
         '<span class="ex">'+e+'</span>'+
         '<button class="ic" data-act="edit" data-id="'+f.id+'" type="button" title="Исправить исполнителя и название">✎</button>'+
         '<button class="ic rm" data-act="rm" data-id="'+f.id+'" type="button" title="Убрать из списка">✕</button>'+
-        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать">'+(playingId===f.id?'⏸':'▶')+'</button>'+
+        '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать">'+(playingId===f.id?'<span class="eq"><i></i><i></i><i></i></span>':'▶')+'</button>'+
       '</div>'+
       '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
         (info.alts && info.alts.length > 1 ? '<button class="bd alt" data-act="alt" data-id="'+f.id+'" type="button" title="'+esc(altTip(info))+'" >⇄ '+((info.altIdx||0)+1)+'/'+info.alts.length+'</button>' : '')+
@@ -220,7 +221,7 @@ function drawResults(){
     var tag=(r.isMp3 && r.trackNum)?('<span class="sz">TRCK='+r.trackNum+'</span>'):'<span class="sz">—</span>';
     var src=r.source?(' <span class="sz" style="font-size:10px;opacity:.7">'+esc(r.source)+'</span>'):'';
     var d=document.createElement("div");d.className="res-item";
-    d.innerHTML='<span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span>'+src+'<span class="ar">'+esc(r.artist||"—")+'</span>'+tag+'<span class="sz">'+fmtSize(r.size)+'</span><button class="btn sm" data-i="'+i+'" type="button">💾</button><button class="ic" data-play="'+i+'" type="button" title="Прослушать">'+(playingRes===i?'⏸':'▶')+'</button>';
+    d.innerHTML='<span class="n">'+String(i+1).padStart(3,"0")+'.</span><span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span>'+src+'<span class="ar">'+esc(r.artist||"—")+'</span>'+tag+'<span class="sz">'+fmtSize(r.size)+'</span><button class="btn sm" data-i="'+i+'" type="button">💾</button><button class="ic" data-play="'+i+'" type="button" title="Прослушать">'+(playingRes===i?'<span class="eq"><i></i><i></i><i></i></span>':'▶')+'</button>';
     L.appendChild(d);
   });
   $("rcnt").textContent=results.length;

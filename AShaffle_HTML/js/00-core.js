@@ -1,5 +1,4 @@
 
-(function(){
 "use strict";
 
 var EX={mp3:1,flac:1,m4a:1,ogg:1,wav:1,aac:1,wma:1,opus:1,aiff:1,alac:1,ape:1};
@@ -94,9 +93,25 @@ function norm(s){
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function fmtSize(b){if(b<1024)return b+" Б";if(b<1048576)return (b/1024).toFixed(1)+" КБ";return (b/1048576).toFixed(1)+" МБ"}
 function fmtDur(s){var t=Math.round(s||0),m=Math.floor(t/60),r=t%60;return m+":"+(r<10?"0":"")+r}
-function theme(t){
-  if(t==="dark"){document.documentElement.setAttribute("data-theme","dark");$("tt").textContent="☀️"}
-  else{document.documentElement.removeAttribute("data-theme");$("tt").textContent="🌙"}
-  try{ localStorage.setItem("ashuffle-theme", t==="dark" ? "dark" : "light"); }catch(e){}
+/* Тема: «light» | «dark» | «system» — системная подстраивается под ОС.
+   Хранится в localStorage, кнопка в шапке перекликивает по кругу. */
+var _sysTheme = (typeof window !== "undefined" && typeof window.matchMedia === "function")
+  ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+function applyTheme(mode){
+  var dark = mode === "dark" || (mode === "system" && !!(_sysTheme && _sysTheme.matches));
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  var tt = $("tt");
+  if(tt) tt.textContent = dark ? "☀️" : "🌙";
+}
+function theme(mode){
+  try{ localStorage.setItem("ashuffle-theme", mode); }catch(e){}
+  applyTheme(mode);
+}
+function themeMode(){
+  try{
+    var m = localStorage.getItem("ashuffle-theme");
+    if(m === "light" || m === "dark" || m === "system") return m;
+  }catch(e){}
+  return "system";
 }
 

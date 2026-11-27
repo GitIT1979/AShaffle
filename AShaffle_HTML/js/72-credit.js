@@ -1,3 +1,4 @@
+"use strict";
 /* Каталог часто знает только главного исполнителя: «G-Eazy» вместо «G-Eazy & Halsey».
    Если в файле участников больше — ищем полный кредит в том же треке */
 function creditGaps(candArtist, srcArtist){

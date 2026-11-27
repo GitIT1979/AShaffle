@@ -8,7 +8,7 @@ const path = require("path");
 
 function appCode() {
   const dir = path.join(__dirname, "..", "AShaffle_HTML", "js");
-  return fs.readdirSync(dir)
+  return '"use strict";\n' + fs.readdirSync(dir)
     .filter(f => f.endsWith(".js"))
     .sort()
     .map(f => fs.readFileSync(path.join(dir, f), "utf8"))

@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm'),path=require('path');
 let code=require('./load-app.js').appCode();
-code=code.replace(/\}\)\(\);\s*$/, "globalThis.__a={parseTrackInfo:parseTrackInfo};})();");
+code+="\n;globalThis.__a={parseTrackInfo:parseTrackInfo};";
 const el=()=>({textContent:'',innerHTML:'',style:{},dataset:{},classList:{add(){},remove(){}},addEventListener(){},appendChild(){},querySelector(){return null},querySelectorAll(){return []},setAttribute(){},removeAttribute(){},getAttribute(){return null}});
 const els={};
 const document={getElementById(id){return els[id]||(els[id]=el())},createElement(){return el()},body:el(),documentElement:{setAttribute(){},removeAttribute(){},getAttribute(){return null}}};
