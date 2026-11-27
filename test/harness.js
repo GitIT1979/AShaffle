@@ -1,5 +1,5 @@
 "use strict";
-/* Тестовый стенд: склеивает js-блоки из AShaffle_HTML/js, исполняет их в песочнице
+/* Тестовый стенд: склеивает js-блоки из AShuffle_HTML/js, исполняет их в песочнице
    с минимальным DOM и проверяет чистые функции. Запуск: node test/harness.js */
 const fs = require("fs");
 const path = require("path");
@@ -19,8 +19,8 @@ function eq(actual, expected, label) {
 function ok(cond, label) { eq(!!cond, true, label); }
 
 /* ---------- песочница ---------- */
-const html = fs.readFileSync(path.join(ROOT, "AShaffle_HTML", "AShaffle.html"), "utf8");
-if (!/<script src="js\//.test(html)) throw new Error("в AShaffle.html нет ссылок на js-блоки");
+const html = fs.readFileSync(path.join(ROOT, "AShuffle_HTML", "AShuffle.html"), "utf8");
+if (!/<script src="js\//.test(html)) throw new Error("в AShuffle.html нет ссылок на js-блоки");
 let code = require("./load-app.js").appCode();
 if (code.indexOf("parseTrackInfo") < 0) throw new Error("код приложения не собрался");
 code += "\n;globalThis.__api={parseTrackInfo:parseTrackInfo,makeName:makeName," +
@@ -80,7 +80,7 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 sandbox.self = sandbox;
 vm.createContext(sandbox);
-vm.runInContext(code, sandbox, { filename: "AShaffle-inline.js" });
+vm.runInContext(code, sandbox, { filename: "AShuffle-inline.js" });
 const api = sandbox.__api;
 
 /* ---------- разбор имён ---------- */

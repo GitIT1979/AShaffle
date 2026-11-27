@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AShuffle — десктопная оболочка для Windows.
 
-Поднимает локальный сервер с файлами AShaffle_HTML и открывает окно
+Поднимает локальный сервер с файлами AShuffle_HTML и открывает окно
 на его адресе. Возможности те же, что у HTML-версии: контекст 127.0.0.1 —
 безопасный, поэтому работают «Сохранить все в папку», выбор ZIP-файла
 и сетевые запросы к Deezer, iTunes и MusicBrainz.
@@ -25,7 +25,7 @@ except ImportError:
     sys.exit("Не установлен pywebview. Выполните: python -m pip install pywebview pyinstaller")
 
 APP_NAME = "AShuffle"
-INDEX = "AShaffle.html"
+INDEX = "AShuffle.html"
 PORT_RANGE = range(8123, 8133)
 
 
@@ -51,8 +51,8 @@ def web_root():
     base = getattr(sys, "_MEIPASS", None)
     if base and os.path.isdir(os.path.join(base, "web")):
         return os.path.join(base, "web")
-    # Запуск из исходников: AShaffle_HTML на уровень выше этой папки
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "AShaffle_HTML")
+    # Запуск из исходников: AShuffle_HTML на уровень выше этой папки
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "AShuffle_HTML")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):

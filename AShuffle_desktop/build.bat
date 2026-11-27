@@ -6,7 +6,7 @@ cd /d "%~dp0"
 python -m pip install pywebview pyinstaller
 pyinstaller --onefile --windowed --name AShuffle --clean ^
   --distpath . ^
-  --add-data "..\AShaffle_HTML;web" ^
+  --add-data "..\AShuffle_HTML;web" ^
   app.py
 echo.
 echo Готово: AShuffle.exe

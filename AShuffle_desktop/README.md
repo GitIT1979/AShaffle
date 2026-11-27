@@ -1,6 +1,6 @@
 # AShuffle Desktop (Windows)
 
-Десктопная сборка AShuffle: тот же код, что и в `AShaffle_HTML/`, запакованный
+Десктопная сборка AShuffle: тот же код, что и в `AShuffle_HTML/`, запакованный
 в одно окно через WebView2 (pywebview).
 
 ## Запуск
@@ -22,12 +22,12 @@ build.bat
 
 ```
 python -m pip install pywebview pyinstaller
-pyinstaller --onefile --windowed --name AShuffle --clean --distpath . --add-data "..\AShaffle_HTML;web" app.py
+pyinstaller --onefile --windowed --name AShuffle --clean --distpath . --add-data "..\AShuffle_HTML;web" app.py
 ```
 
 ## Структура
 
 - `app.py` — локальный сервер + окно webview; в собранном exe берёт ресурсы
-  из распаковки (`sys._MEIPASS/web`), в исходниках — из `../AShaffle_HTML`
+  из распаковки (`sys._MEIPASS/web`), в исходниках — из `../AShuffle_HTML`
 - `build.bat` — команда сборки
 - `AShuffle.exe` — готовая сборка (лежит в корне этой папки)

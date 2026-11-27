@@ -1,9 +1,9 @@
 "use strict";
 /* Общий загрузчик кода приложения для проверок: читает js-блоки из
-   AShaffle_HTML/js и склеивает их в исходный скрипт (до v11.67 код вынимался
-   из inline-<script> корневого AShaffle.html).
+   AShuffle_HTML/js и склеивает их в исходный скрипт (до v11.67 код вынимался
+   из inline-<script> корневого AShuffle.html).
    Порядок исполнения задаёт список ORDER — он совпадает с порядком <script>
-   в AShaffle.html. Файл на диске без записи в ORDER (и наоборот) — ошибка:
+   в AShuffle.html. Файл на диске без записи в ORDER (и наоборот) — ошибка:
    так новый блок не потеряется молча. */
 const fs = require("fs");
 const path = require("path");
@@ -15,7 +15,7 @@ const ORDER = [
 ];
 
 function appCode() {
-  const dir = path.join(__dirname, "..", "AShaffle_HTML", "js");
+  const dir = path.join(__dirname, "..", "AShuffle_HTML", "js");
   const onDisk = fs.readdirSync(dir).filter(f => f.endsWith(".js")).sort();
   const missing = onDisk.filter(f => ORDER.indexOf(f) < 0);
   const extra = ORDER.filter(f => onDisk.indexOf(f) < 0);

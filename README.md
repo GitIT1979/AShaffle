@@ -1,26 +1,26 @@
 # AShuffle
 
-Веб-приложение из одной страницы (`AShaffle.html` + `style.css` + js-блоки): возвращает трекам их истинные имена и перемешивает их так, чтобы рядом не оказывались песни одного исполнителя.
+Веб-приложение из одной страницы (`AShuffle.html` + `style.css` + js-блоки): возвращает трекам их истинные имена и перемешивает их так, чтобы рядом не оказывались песни одного исполнителя.
 
-Версия: **v11.70**
+Версия: **v11.72**
 
 ## Быстрый старт
 
 Открывать нужно **через локальный сервер**, а не двойным кликом: со страницы `file://` браузер режет запросы к Deezer, iTunes и MusicBrainz, и проверка названий молча ничего не находит.
 
 ```
-cd D:\AI_projects\AShaffle\AShaffle_HTML
+cd D:\AI_projects\AShuffle\AShuffle_HTML
 python -m http.server 8123
 ```
 
-Затем открыть <http://127.0.0.1:8123/AShaffle.html>.
+Затем открыть <http://127.0.0.1:8123/AShuffle.html>.
 
 ## Десктопная версия (Windows)
 
-В `AShaffle_desktop/` лежит `AShuffle.exe` — тот же код в окне WebView2.
+В `AShuffle_desktop/` лежит `AShuffle.exe` — тот же код в окне WebView2.
 Файлы рядом не нужны: при старте приложение само поднимает сервер на
 `127.0.0.1` и открывает окно. Возможности те же, что у HTML-версии, включая
-«Сохранить все в папку». Пересборка: `AShaffle_desktop/build.bat`
+«Сохранить все в папку». Пересборка: `AShuffle_desktop/build.bat`
 (pywebview + pyinstaller, веб-ресурсы зашиваются внутрь exe).
 
 ## Два шага
@@ -32,7 +32,7 @@ python -m http.server 8123
 
 ## Реестр правил
 
-Все правила обработки имён собраны в одном месте — массив `RULES` в начале скрипта (`AShaffle_HTML/js/core.js`). У каждого правила есть номер, слой, текст и функция (или константа), которая его реализует. Посмотреть список прямо в браузере:
+Все правила обработки имён собраны в одном месте — массив `RULES` в начале скрипта (`AShuffle_HTML/js/core.js`). У каждого правила есть номер, слой, текст и функция (или константа), которая его реализует. Посмотреть список прямо в браузере:
 
 ```js
 __ashuffleRules()
@@ -114,11 +114,11 @@ __ashuffleRules()
 ## Файлы
 
 ```
-AShaffle_HTML/             приложение для браузера: оболочка, style.css, js-блоки
-AShaffle_HTML/js/          core (реестр RULES), parse, catalog, name-shuffle, id3,
+AShuffle_HTML/             приложение для браузера: оболочка, style.css, js-блоки
+AShuffle_HTML/js/          core (реестр RULES), parse, catalog, name-shuffle, id3,
                            tags, ui, lookup, verify, credit, pipeline, zip, main —
-                           порядок исполнения задаёт AShaffle.html и test/load-app.js
-AShaffle_desktop/          десктопная сборка Windows (exe на том же коде)
+                           порядок исполнения задаёт AShuffle.html и test/load-app.js
+AShuffle_desktop/          десктопная сборка Windows (exe на том же коде)
 test/load-app.js           загрузчик: склейка js-блоков для проверок
 test/harness.js            модульные проверки (217 проверок)
 test/rules.js              пошаговые проверки правил из реестра
