@@ -112,9 +112,8 @@ if(typeof window !== "undefined") window.__ashuffleMemory = function(){ return _
 function lookupTrack(info, dur){
   /* Латинские двойники вычищаем у любых входных данных, не только из имени файла */
   var a=foldMixed(info.artist||""), t=foldMixed(info.title||""), raw=foldMixed(info._raw||"");
-  /* «unknown_artist» — не исполнитель: ищем по одному названию */
-  if(isPlaceholder(a)) a = "";
-  /* Заглушка или непроизносимая запись («花電車») — ищем по одному названию */
+  /* Заглушка («unknown_artist») или непроизносимая запись («花電車») —
+     не исполнитель: ищем по одному названию */
   if(isPlaceholder(a) || !tokens(a).length) a = "";
   var wide = versionWide(info.artist, info.title);
   var primary=(a && t && t!=="unknown_track") ? (a+" "+t) : "";

@@ -54,7 +54,7 @@ function startRename(opts){
       if(typeof opts.done === "function") opts.done();
       return;
     }
-    var f=files[j], num=j+1;
+    var f=files[j];
     var isMp3=ext(f.name)==="mp3";
     var extPart=(f.name.match(/\.[^.]+$/) || [""])[0];
     markProcessing(f);

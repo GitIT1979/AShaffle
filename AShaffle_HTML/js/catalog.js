@@ -185,8 +185,9 @@ function lookupDeezer(term, dur, loose, wide){
   if(Object.prototype.hasOwnProperty.call(_dzCache, key)) return Promise.resolve(_dzCache[key]);
   var url = "https://api.deezer.com/search?q=" + encodeURIComponent(term) + "&limit=5&output=jsonp";
   return _jsonp(url, "callback", 10000).then(function(json){
-    /* Транспортный сбой JSONP: считаем ошибкой сети и не кэшируем */
-    if(!json){ _netErrors++; return null; }
+    /* Транспортный сбой или ответ-ошибка Deezer (лимит квоты — {"error":…}):
+       считаем ошибкой сети и не кэшируем */
+    if(!json || json.error){ _netErrors++; return null; }
     var out = null, picked = [];
     ((json && json.data) || []).forEach(function(t){
       if(!t || !t.title || !t.artist || !t.artist.name) return;

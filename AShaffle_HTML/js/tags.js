@@ -288,6 +288,7 @@ function readOggTags(file){
     while(p + 27 <= u8.length){
       if(String.fromCharCode(u8[p],u8[p+1],u8[p+2],u8[p+3]) !== "OggS") break;
       var nseg = u8[p+26], table = p + 27, total = 0;
+      if(table + nseg > u8.length) break;   /* усечённая таблица сегментов */
       for(var i=0;i<nseg;i++) total += u8[table+i];
       var dstart = table + nseg;
       if(dstart + total > u8.length) break;

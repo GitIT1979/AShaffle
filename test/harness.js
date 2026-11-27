@@ -40,7 +40,7 @@ code += "\n;globalThis.__api={parseTrackInfo:parseTrackInfo,makeName:makeName," 
   "aliasSplit:aliasSplit,nameExact:nameExact,durOkExact:durOkExact," +
   "pullCreditFromTitle:pullCreditFromTitle,creditGaps:creditGaps," +
   "shaveGluedLetter:shaveGluedLetter,capitalizeArtist:capitalizeArtist," +
-  "add:add,entries:function(){return files;},needsCheck:needsCheck,summaryText:summaryText," +
+  "add:add,entries:function(){return files;},needsCheck:needsCheck," +
   "rowHtml:rowHtml,startRename:startRename,RULES:RULES," +
   "norm:norm,stripNoiseBrackets:stripNoiseBrackets,isPlaceholder:isPlaceholder," +
   "lookupTrack:lookupTrack,lookupDeezer:lookupDeezer,capWords:capWords," +

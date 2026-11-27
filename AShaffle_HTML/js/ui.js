@@ -51,18 +51,6 @@ function updateGoBtn(){
 
 function needsCheck(f){ return f.info.status==="raw"; }
 function needsRetry(f){ return f.info.status==="raw" || f.info.status==="none"; }
-function summaryText(){
-  if(!files.length) return "";
-  var c={raw:0,ok:0,fixed:0,none:0,manual:0};
-  files.forEach(function(f){ var s=f.info.status||"raw"; c[s]=(c[s]||0)+1; });
-  var p=[];
-  if(c.fixed)  p.push("исправлено "+c.fixed);
-  if(c.manual) p.push("вручную "+c.manual);
-  if(c.ok)     p.push("подтверждено "+c.ok);
-  if(c.none)   p.push("не найдено "+c.none);
-  if(c.raw)    p.push("не проверено "+c.raw);
-  return p.join(" · ");
-}
 function statusBadge(info){
   var pct = (typeof info.score === "number" && info.score > 0) ? " · " + Math.round(info.score * 100) + "%" : "";
   if(info.status==="ok")     return '<span class="bd ok" title="Подтверждено: '+esc(info.source||"интернет")+'">✓ подтверждено'+pct+'</span>';
@@ -87,7 +75,8 @@ function rowHtml(f,i){
   var info=f.info, e=ext(f.name).toUpperCase();
   var idx=String(i+1).padStart(3,"0")+".";
   if(f.id===editingId){
-    return '<div class="fi" data-id="'+f.id+'">'+
+    /* Подсветка играющего трека не гаснет, когда открыта форма правки */
+    return '<div class="fi'+(playingId===f.id?' playing':'')+'" data-id="'+f.id+'">'+
       '<span class="n">'+idx+'</span>'+
       '<div class="fmain">'+
         '<div class="top">'+
@@ -113,7 +102,7 @@ function rowHtml(f,i){
         '<button class="ic rm" data-act="rm" data-id="'+f.id+'" type="button" title="Убрать из списка">✕</button>'+
         '<button class="ic" data-act="play" data-id="'+f.id+'" type="button" title="Прослушать">'+(playingId===f.id?'<span class="eq"><i></i><i></i><i></i></span>':'▶')+'</button>'+
       '</div>'+
-      '<div class="bot"><span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
+      '<div class="bot">'+(playingId===f.id?'<span class="eq"><i></i><i></i><i></i></span> ':'')+'<span class="ar">'+esc(label)+'</span>'+statusBadge(info)+
         (info.alts && info.alts.length > 1 ? '<button class="bd alt" data-act="alt" data-id="'+f.id+'" type="button" title="'+esc(altTip(info))+'" >⇄ '+((info.altIdx||0)+1)+'/'+info.alts.length+'</button>' : '')+
         (info.fromTags && info.status==="raw" ? '<span class="bd tg" title="Исполнитель и название взяты из тега файла">тег</span>' : '')+
         (info.status==="none" ? '<button class="bd nn" data-act="edit" data-id="'+f.id+'" type="button" title="Ничего не нашлось — исправьте вручную">✎ исправить</button>' : '')+
@@ -138,7 +127,7 @@ function pbarUpdate(){
 }
 function pbarShow(name){
   var b=$("pbar"); if(!b) return;
-  $("pbn").textContent = name || "—";
+  $("pbn").innerHTML = '<span class="eq"><i></i><i></i><i></i></span> ' + esc(name || "—");
   b.classList.add("show");
   document.body.classList.add("has-pbar");
   var a=$("player");
@@ -225,15 +214,17 @@ function drawResults(){
     L.appendChild(d);
   });
   $("rcnt").textContent=results.length;
+  /* currentTarget, а не target: у играющего трека внутри кнопки эквалайзер —
+     клик по полоскам не должен терять номер строки */
   Array.prototype.forEach.call(L.querySelectorAll("button[data-i]"),function(b){
     b.addEventListener("click",function(e){
-      var r=results[+e.target.dataset.i];
+      var r=results[+e.currentTarget.dataset.i];
       download(r.file, r.name);
       stt("Скачан: "+r.name);
     });
   });
   Array.prototype.forEach.call(L.querySelectorAll("button[data-play]"),function(b){
-    b.addEventListener("click",function(e){ e.stopPropagation(); togglePlayRes(+e.target.dataset.play); });
+    b.addEventListener("click",function(e){ e.stopPropagation(); togglePlayRes(+e.currentTarget.dataset.play); });
   });
 }
 

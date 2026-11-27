@@ -2,7 +2,9 @@
 /* Проходит по списку по одному файлу и отмечает статус каждого названия. */
 function verifyQueue(todo){
   pshow("Проверка названий через интернет…");
-  var st={changed:0, confirmed:0, missing:0, cancelled:false, stopped:false};
+  /* Из статистики читаются только флаги останова: changed/confirmed/missing
+     вычисляются в самих status строк */
+  var st={cancelled:false, stopped:false};
   var i=0, netStreak=0, failedNow=[];
   function step(){
     if(cancelVerify){ st.cancelled=true; return Promise.resolve(st); }
@@ -70,17 +72,16 @@ function verifyQueue(todo){
            («feat», «&», «and»), а не искажённая граница слов */
         var creditMark = /(?:^|\s)(feat\.?|ft\.?|&|and|with|vs\.?|и|с)(?:\s|$)/i.test(srcArtist);
         if(subset && fndTok.length < srcTok.length && extraMeaningful && creditMark) keepFeat = true;
-        /* Строчное имя в файле — мусорная запись, а не кредит: берём написание каталога */
+        /* Строчное имя в файле — мусорная запись, а не кредит: берём написание каталога
+           ("kesha" в файле, "Kesha" в базе) */
         var srcAllLower = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();
         if(srcAllLower) keepFeat = false;
         /* Обрубок вроде «Var» — не участник кредита, а мусор: не сохраняем его */
         var srcTrim = dropJunkPrefix(srcArtist);
         if(srcTrim && norm(srcTrim) === norm(found.artist)) keepFeat = false;
-        /* Если в файле всё строчными ("kesha"), берём написание базы */
         var srcTitle = f.info.title || "";
-        var lowerArtist = !!srcArtist && srcArtist === srcArtist.toLowerCase() && srcArtist !== srcArtist.toUpperCase();
         var lowerTitle  = !!srcTitle  && srcTitle  === srcTitle.toLowerCase()  && srcTitle  !== srcTitle.toUpperCase();
-        f.info.artist = keepFeat ? srcArtist : ((sameArtist && srcArtist && !lowerArtist) ? srcArtist : (found.artist || srcArtist));
+        f.info.artist = keepFeat ? srcArtist : ((sameArtist && srcArtist && !srcAllLower) ? srcArtist : (found.artist || srcArtist));
         /* Склеенное имя из файла («A-b-c») и кредит каталога «A & B» приводим к «A Feat. B» */
         if(!keepFeat && f.info._glued) f.info.artist = featCredit(f.info.artist);
         f.info.artist = keepArticle(f.info.artist, srcArtist);
@@ -101,10 +102,8 @@ function verifyQueue(todo){
         /* Все подходящие варианты: лучший уже выбран, остальные — на случай ошибки */
         f.info.alts = altsFor({ artist:f.info.artist, title:f.info.title, source:f.info.source, score:f.info.score }, found.alts, f.duration);
         f.info.altIdx = 0;
-        if(same) st.confirmed++; else st.changed++;
       } else {
         f.info.status="none";
-        st.missing++;
         failedNow.push(f);
       }
       i++;
@@ -121,7 +120,6 @@ function verifyQueue(todo){
     /* сеть легла — это не «не найдено», файлы остаются непроверенными */
     if(r.stopped){
       failedNow.forEach(function(f){ f.info.status="raw"; f.info.source=""; });
-      r.missing=0;
     }
     return r;
   });

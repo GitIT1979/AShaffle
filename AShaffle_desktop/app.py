@@ -7,7 +7,7 @@
 и сетевые запросы к Deezer, iTunes и MusicBrainz.
 
 Запуск из исходников:  python app.py   (нужен pywebview: см. build.bat)
-Сборка exe:            build.bat       (pyinstaller, результат в dist\\)
+Сборка exe:            build.bat       (pyinstaller, exe появится рядом с build.bat)
 """
 import http.server
 import os

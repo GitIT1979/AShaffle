@@ -6,8 +6,8 @@
 $("list").addEventListener("click", function(e){
   var b = e.target.closest ? e.target.closest("[data-act]") : null;
   if(!b) return;
-  var id0=+b.dataset.id, act0=b.dataset.act;
   /* Слушать и менять вариант можно и во время проверки: это не меняет очередь */
+  var act0=b.dataset.act;
   if((busy || verifying) && act0 !== "alt" && act0 !== "play"){
     stt("Дождитесь окончания проверки…");
     return;
@@ -126,6 +126,8 @@ $("tt").addEventListener("click",function(){
     });
     s.addEventListener("change", function(){ delete s.dataset.seek; });
     s.addEventListener("pointerup", function(){ delete s.dataset.seek; });
+    /* Жест перетаскивания прерван системой — ползунок снова следует за треком */
+    s.addEventListener("pointercancel", function(){ delete s.dataset.seek; });
   }
   if(b) b.addEventListener("click", function(){
     if(a.paused){ var p=a.play(); if(p && p.catch) p.catch(function(){}); }
